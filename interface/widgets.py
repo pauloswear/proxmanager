@@ -56,12 +56,20 @@ class VMWidget(QWidget):
 
     def setup_ui(self):
         self.setStyleSheet("""
-            VMWidget { background-color: #2D2D2D; border-radius: 6px; margin: 4px 0px; border: 1px solid #444444; }
-            VMWidget:hover { background-color: #3A3A3A; }
+            VMWidget { 
+                background-color: #2D2D2D; 
+                border-radius: 6px; 
+                margin: 1px; 
+                border: 1px solid #444444; 
+            }
+            VMWidget:hover { 
+                background-color: #3A3A3A; 
+                border: 1px solid #4A90E2;
+            }
         """)
-        self.setFixedHeight(85) 
+        self.setFixedHeight(65)  # Reduzido de 85 para 65
         main_layout = QHBoxLayout(self)
-        main_layout.setContentsMargins(15, 5, 15, 5)
+        main_layout.setContentsMargins(15, 3, 10, 3)  # Margem esquerda ajustada para 15px
 
         # 1. Indicador de Status (Gráfico)
         status_indicator = QLabel()
@@ -73,10 +81,10 @@ class VMWidget(QWidget):
         info_widget = QWidget()
         info_layout = QVBoxLayout(info_widget)
         info_layout.setContentsMargins(0, 0, 0, 0)
-        info_layout.setSpacing(1) 
+        info_layout.setSpacing(0)  # Reduzido de 1 para 0 
         
-        self.name_id_label = QLabel(f"<b>{self.name}</b> <span style='color: #888888; font-size: 8pt;'>(ID: {self.vmid})</span>")
-        self.name_id_label.setStyleSheet("color: white; font-size: 14pt;")
+        self.name_id_label = QLabel(f"<b>{self.name}</b> <span style='color: #888888; font-size: 7pt;'>(ID: {self.vmid})</span>")
+        self.name_id_label.setStyleSheet("color: white; font-size: 11pt;")  # Reduzido de 14pt para 11pt
         info_layout.addWidget(self.name_id_label)
         
         info_layout.addWidget(self.status_label) 
@@ -108,7 +116,7 @@ class VMWidget(QWidget):
         main_layout.addLayout(action_layout, 6) 
 
         button_style_base = """
-            QPushButton { height: 30px; border-radius: 4px; font-size: 9pt; font-weight: bold; background-color: #383838; }
+            QPushButton { height: 24px; border-radius: 3px; font-size: 8pt; font-weight: bold; background-color: #383838; }
             QPushButton:hover { background-color: #454545; border: 1px solid #777777; }
             QPushButton:pressed { background-color: #202020; padding-top: 3px; padding-left: 3px; }
         """
@@ -129,7 +137,7 @@ class VMWidget(QWidget):
         cpu_usage_percent = data_source.get('cpu', 0.0) * 100
         cpu_cores_total = data_source.get('maxcpu', 1)
         cpu_text = f"CPU: {cpu_usage_percent:.1f}% de {cpu_cores_total} Cores"
-        self.cpu_usage_label.setStyleSheet("color: #00A3CC; font-size: 9pt;")
+        self.cpu_usage_label.setStyleSheet("color: #00A3CC; font-size: 8pt;")
         self.cpu_usage_label.setText(cpu_text)
         
         # --- Uso de Memória (RAM) ---
@@ -143,7 +151,7 @@ class VMWidget(QWidget):
         else:
             mem_text = "RAM: N/A"
 
-        self.mem_usage_label.setStyleSheet("color: #FFC107; font-size: 9pt;")
+        self.mem_usage_label.setStyleSheet("color: #FFC107; font-size: 8pt;")
         self.mem_usage_label.setText(mem_text)
 
     def update_status_display(self):
@@ -162,7 +170,7 @@ class VMWidget(QWidget):
         status_text = f"Status: <b>{status.upper()}</b>"
 
         self.status_label.setText(status_text)
-        self.status_label.setStyleSheet(f"color: {color}; font-size: 9pt;")
+        self.status_label.setStyleSheet(f"color: {color}; font-size: 8pt;")
         self.status_indicator.setStyleSheet(f"QLabel {{ background-color: {color}; border-radius: 5px; }}")
 
 

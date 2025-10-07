@@ -2,49 +2,70 @@ import datetime
 from typing import Dict, Any, List, Optional, Tuple
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
-    QScrollArea, QDesktopWidget, QPushButton, QMessageBox
+    QScrollArea, QDesktopWidget, QPushButton, QMessageBox, 
+    QLineEdit, QComboBox, QFrame, QSizePolicy
 )
 from PyQt5.QtCore import (
-    Qt, QTimer, QSize, QSettings, QThreadPool, pyqtSlot, QPoint
+    Qt, QTimer, QSize, QThreadPool, pyqtSlot, QPoint
 )
 from PyQt5.QtGui import QFont
 # Importações relativas
 from .widgets import VMWidget
+from .tree_widget import VMTreeWidget
 from api import ProxmoxController 
 from utils.utilities import set_dark_title_bar 
+from utils.config_manager import ConfigManager
 from .worker import Worker, WorkerSignals 
 
 
 class MainWindow(QMainWindow):
-    """ Janela principal para gerenciar e visualizar as VMs e o status do Node. """
-    
-    vm_widgets: Dict[int, VMWidget]
+    """Main window for managing and viewing VMs and Node status."""
     
     def __init__(self, controller: ProxmoxController):
         super().__init__()
         set_dark_title_bar(self.winId())
         self.controller = controller
 
-        self.timer_interval = 1000 # intervalo do tempo de atualização do dash em MS
+        # Initialize config manager
+        self.config_manager = ConfigManager()
+        
+        # Load configurations
+        configs = self.config_manager.load_configs()
+        self.timer_interval = configs.get('timer_interval', 300)
         
         self.threadpool = QThreadPool()
 
         node_name = self.controller.api_client.node if hasattr(self.controller.api_client, 'node') else 'N/A'
         self.setWindowTitle(f"ProxManager - Node: {node_name}")
         
-        self.settings = QSettings()
         self.load_geometry() 
         
         self.setStyleSheet("background-color: #1E1E1E; color: white;") 
         
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
-        self.main_layout = QVBoxLayout(central_widget)
         
-        self.vm_widgets = {}
+        # Main horizontal layout: sidebar + content
+        main_horizontal_layout = QHBoxLayout(central_widget)
+        main_horizontal_layout.setContentsMargins(0, 0, 0, 0)
+        main_horizontal_layout.setSpacing(0)
+        
+        # Create sidebar
+        self.setup_sidebar()
+        main_horizontal_layout.addWidget(self.sidebar)
+        
+        # Create content area with vertical layout
+        content_widget = QWidget()
+        self.main_layout = QVBoxLayout(content_widget)
+        main_horizontal_layout.addWidget(content_widget)
+
+        # Filter variables
+        self.current_search_text = ""
+        self.current_status_filter = "ALL"
+        self.unfiltered_vms_list = []  # Store original VM list
 
         self.setup_header()
-        self.setup_scroll_area()
+        self.setup_tree_view()
         self.setup_footer() 
         
         self.initial_load()
@@ -58,7 +79,7 @@ class MainWindow(QMainWindow):
     # --------------------------------------------------------------------------
 
     def initial_load(self):
-        """ Carrega o painel pela primeira vez de forma síncrona. """
+        """Loads the dashboard for the first time synchronously."""
         try:
             # Aqui é síncrono para garantir que a UI não comece vazia.
             node_data, vms_list = self.controller.update_dashboard()
@@ -69,12 +90,12 @@ class MainWindow(QMainWindow):
                                  QMessageBox.Ok)
             
     def run_update_in_thread(self):
-        """ Inicia a atualização do dashboard em uma thread separada. """
+        """Starts dashboard update in a separate thread."""
         
         if self.threadpool.activeThreadCount() > 0:
              return
         
-        # Parar o Timer para evitar sobreposição de requisições
+        # Stop Timer to avoid request overlap
         self.timer.stop()
              
         worker = Worker(self.controller.update_dashboard) 
@@ -92,7 +113,7 @@ class MainWindow(QMainWindow):
             node_data, vms_list = result
             self.update_gui_with_data(node_data, vms_list)
 
-        # Reinicia o Timer (Ciclo de 2.5s começa agora)
+        # Restart Timer (cycle starts now)
         self.timer.start(self.timer_interval) 
 
     @pyqtSlot(tuple)
@@ -105,6 +126,84 @@ class MainWindow(QMainWindow):
                              QMessageBox.Ok)
         
         self.timer.start(self.timer_interval)
+
+    def pause_timer(self):
+        """Pauses the update timer during drag operations"""
+        self.timer.stop()
+
+    def resume_timer(self):
+        """Resumes the update timer after drag operations"""
+        self.timer.start(self.timer_interval)
+
+    # --------------------------------------------------------------------------
+    # --- Filter Methods
+    # --------------------------------------------------------------------------
+    
+    def on_search_changed(self, text: str):
+        """Called when search text changes"""
+        self.current_search_text = text.strip().lower()
+        self.apply_filters()
+    
+    def on_status_filter_changed(self, status: str):
+        """Called when status filter changes"""
+        self.current_status_filter = status
+        self.apply_filters()
+    
+    def has_active_filters(self) -> bool:
+        """Check if any filters are currently active"""
+        return (
+            bool(self.current_search_text) or 
+            self.current_status_filter != "ALL"
+        )
+    
+    def clear_filters(self):
+        """Clears all filters"""
+        self.search_field.clear()
+        self.status_combo.setCurrentText("ALL")
+        self.current_search_text = ""
+        self.current_status_filter = "ALL"
+        self.apply_filters()
+    
+    def apply_filters(self):
+        """Applies current filters to the VM list"""
+        if not self.unfiltered_vms_list:
+            return
+        
+        filtered_vms = []
+        
+        for vm in self.unfiltered_vms_list:
+            # Apply search filter
+            vm_name = vm.get('name', '').lower()
+            vm_id = str(vm.get('vmid', ''))
+            
+            search_match = (
+                not self.current_search_text or 
+                self.current_search_text in vm_name or
+                self.current_search_text in vm_id
+            )
+            
+            # Apply status filter
+            vm_status = vm.get('status', 'unknown').upper()
+            status_match = (
+                self.current_status_filter == "ALL" or
+                (self.current_status_filter == "RUNNING" and vm_status == "RUNNING") or
+                (self.current_status_filter == "STOPPED" and vm_status != "RUNNING")
+            )
+            
+            if search_match and status_match:
+                filtered_vms.append(vm)
+        
+        # Update results count
+        total_count = len(self.unfiltered_vms_list)
+        filtered_count = len(filtered_vms)
+        if filtered_count == total_count:
+            self.results_label.setText(f"{total_count} servers")
+        else:
+            self.results_label.setText(f"{filtered_count} of {total_count} servers")
+        
+        # Update tree with filtered data
+        # If filters are active, expand groups that contain results
+        self.tree_widget.update_tree(filtered_vms, expand_groups_with_results=self.has_active_filters())
 
     # --------------------------------------------------------------------------
     # --- Dashboard Methods
@@ -159,71 +258,33 @@ class MainWindow(QMainWindow):
 
 
     def update_vms_widgets(self, vms_list: Optional[List[Dict[str, Any]]]):
-        """ Atualiza os widgets das VMs, contagem de status e garante a ordem. """
-        scroll_bar = self.scroll_area.verticalScrollBar()
-        old_position = scroll_bar.value()
-        
+        """Updates VM tree with status count and applies filters"""
         if not vms_list:
             self.online_label.setText("🚀 Online: 0")
             self.offline_label.setText("🛑 Offline: 0")
+            self.unfiltered_vms_list = []
+            self.apply_filters()
             return
 
-        current_vmids = {vm['vmid'] for vm in vms_list if 'vmid' in vm}
-        
-        # 1. Remover Widgets Obsoletos
-        widgets_to_remove = []
-        for vmid, widget in self.vm_widgets.items():
-            if vmid not in current_vmids:
-                widgets_to_remove.append(widget)
-        
-        for widget in widgets_to_remove:
-            self.vms_layout.removeWidget(widget)
-            widget.deleteLater()
-            del self.vm_widgets[widget.vmid]
+        # Store unfiltered list for filter operations
+        self.unfiltered_vms_list = vms_list.copy()
 
-        # 2. Preparar Ordenação e Contagem
+        # Count online and offline VMs (from unfiltered data)
         online_count = 0
         offline_count = 0
         
-        def sort_key(vm: Dict[str, Any]):
-            status_priority = 0 if vm.get('status', 'unknown') == 'running' else 1
-            return (status_priority, vm.get('name', 'z').lower())
-
-        sorted_vms = sorted(vms_list, key=sort_key)
-        
-        # Limpa o layout para redesenhar na ordem correta
-        while self.vms_layout.count():
-            child = self.vms_layout.takeAt(0)
-            if child.widget():
-                pass # Apenas remove os widgets do layout, a destruição é feita acima
-
-        # 3. Iterar, Contar e Redesenhar (ou Criar)
-        for vm in sorted_vms:
-            vmid = vm.get('vmid')
-            if vmid is None: continue 
-
+        for vm in vms_list:
             if vm.get('status') == 'running':
                 online_count += 1
             else:
                 offline_count += 1
-                
-            if vmid in self.vm_widgets:
-                widget = self.vm_widgets[vmid]
-                widget.update_data(vm) 
-                self.vms_layout.addWidget(widget) 
-                
-            else:
-                vm_widget = VMWidget(vm, self.controller)
-                vm_widget.action_performed.connect(self.run_update_in_thread) 
-                self.vms_layout.addWidget(vm_widget)
-                self.vm_widgets[vmid] = vm_widget
-                
-        # 4. Atualizar Status
+        
+        # Update status labels
         self.online_label.setText(f"🚀 Online: {online_count}")
         self.offline_label.setText(f"🛑 Offline: {offline_count}")
         
-        self.scroll_content.adjustSize()
-        QTimer.singleShot(0, lambda: scroll_bar.setValue(old_position))
+        # Apply filters (this will update the tree)
+        self.apply_filters()
 
 
     # --------------------------------------------------------------------------
@@ -231,23 +292,136 @@ class MainWindow(QMainWindow):
     # --------------------------------------------------------------------------
 
     def setup_header(self):
-        title_label = QLabel("🚀 Servers")
+        title_label = QLabel("Servers")
         title_label.setFont(QFont("Arial", 18, QFont.Bold)) 
         title_label.setAlignment(Qt.AlignCenter)
         title_label.setStyleSheet("color: #00A3CC; margin-bottom: 10px; padding: 5px;") 
         self.main_layout.addWidget(title_label)
 
-    def setup_scroll_area(self):
-        self.scroll_area = QScrollArea()
-        self.scroll_area.setWidgetResizable(True)
-        self.scroll_content = QWidget()
-        self.vms_layout = QVBoxLayout(self.scroll_content)
-        self.vms_layout.setAlignment(Qt.AlignTop)
-        self.vms_layout.setSpacing(5) 
-        self.scroll_area.setWidget(self.scroll_content)
-        self.scroll_area.setStyleSheet("QScrollArea { border: 1px solid #333333; border-radius: 6px; }")
-        self.main_layout.addWidget(self.scroll_area)
+    def setup_tree_view(self):
+        """Configures the tree widget for VM groups"""
+        # Add filters before the tree
+        self.setup_filters()
+        
+        self.tree_widget = VMTreeWidget(self.controller)
+        self.tree_widget.vm_action_performed.connect(self.run_update_in_thread)
+        
+        # Connect drag signals to pause/resume timer
+        self.tree_widget.drag_started.connect(self.pause_timer)
+        self.tree_widget.drag_finished.connect(self.resume_timer)
+        
+        self.main_layout.addWidget(self.tree_widget)
 
+    def setup_filters(self):
+        """Sets up the filter controls above the tree"""
+        # Container for filters
+        filter_container = QFrame()
+        filter_container.setStyleSheet("""
+            QFrame {
+                background-color: #2D2D2D;
+                border-radius: 6px;
+                margin: 5px;
+                padding: 5px;
+            }
+        """)
+        filter_layout = QHBoxLayout(filter_container)
+        filter_layout.setContentsMargins(10, 8, 10, 8)
+        
+        # Search field
+        search_label = QLabel("🔍 Search:")
+        search_label.setStyleSheet("color: white; font-weight: bold; font-size: 10pt;")
+        filter_layout.addWidget(search_label)
+        
+        self.search_field = QLineEdit()
+        self.search_field.setPlaceholderText("Type VM name to search...")
+        self.search_field.setStyleSheet("""
+            QLineEdit {
+                background-color: #383838;
+                border: 1px solid #555555;
+                border-radius: 4px;
+                padding: 6px;
+                color: white;
+                font-size: 10pt;
+                min-width: 200px;
+            }
+            QLineEdit:focus {
+                border: 1px solid #4A90E2;
+                background-color: #404040;
+            }
+        """)
+        self.search_field.textChanged.connect(self.on_search_changed)
+        filter_layout.addWidget(self.search_field)
+        
+        filter_layout.addSpacing(20)
+        
+        # Status filter
+        status_label = QLabel("📊 Status:")
+        status_label.setStyleSheet("color: white; font-weight: bold; font-size: 10pt;")
+        filter_layout.addWidget(status_label)
+        
+        self.status_combo = QComboBox()
+        self.status_combo.addItems(["ALL", "RUNNING", "STOPPED"])
+        self.status_combo.setStyleSheet("""
+            QComboBox {
+                background-color: #383838;
+                border: 1px solid #555555;
+                border-radius: 4px;
+                padding: 6px;
+                color: white;
+                font-size: 10pt;
+                min-width: 100px;
+            }
+            QComboBox::drop-down {
+                border: none;
+                width: 20px;
+            }
+            QComboBox::down-arrow {
+                image: none;
+                border-left: 4px solid transparent;
+                border-right: 4px solid transparent;
+                border-top: 6px solid #CCCCCC;
+                margin-right: 6px;
+            }
+            QComboBox QAbstractItemView {
+                background-color: #383838;
+                border: 1px solid #555555;
+                selection-background-color: #4A90E2;
+                color: white;
+            }
+        """)
+        self.status_combo.currentTextChanged.connect(self.on_status_filter_changed)
+        filter_layout.addWidget(self.status_combo)
+        
+        # Clear filters button
+        clear_btn = QPushButton("Clear")
+        clear_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #FF6B6B;
+                border: none;
+                border-radius: 4px;
+                padding: 6px 12px;
+                color: white;
+                font-weight: bold;
+                font-size: 10pt;
+            }
+            QPushButton:hover {
+                background-color: #FF5252;
+            }
+            QPushButton:pressed {
+                background-color: #E53935;
+            }
+        """)
+        clear_btn.clicked.connect(self.clear_filters)
+        filter_layout.addWidget(clear_btn)
+        
+        filter_layout.addStretch()
+        
+        # Results count
+        self.results_label = QLabel()
+        self.results_label.setStyleSheet("color: #888888; font-size: 9pt;")
+        filter_layout.addWidget(self.results_label)
+        
+        self.main_layout.addWidget(filter_container)
 
     def setup_footer(self):
         """ Configura o rodapé em duas linhas com melhor disposição. """
@@ -369,21 +543,27 @@ class MainWindow(QMainWindow):
     # --------------------------------------------------------------------------
 
     def load_geometry(self):
-        size = self.settings.value("size", QSize(800, 600))
-        position = self.settings.value("pos")
+        configs = self.config_manager.load_configs()
+        window_config = configs.get('window', {})
         
-        if size:
-            self.resize(size)
-
-        if position:
-            self.move(position)
+        width = window_config.get('width', 800)
+        height = window_config.get('height', 600)
+        self.resize(width, height)
+        
+        if window_config.get('maximized', False):
+            self.showMaximized()
         else:
-            self.resize(800, 600)
             self.center()
             
     def closeEvent(self, event):
-        self.settings.setValue("size", self.size())
-        self.settings.setValue("pos", self.pos())
+        # Save window configuration
+        configs = self.config_manager.load_configs()
+        configs['window'] = {
+            'width': self.size().width(),
+            'height': self.size().height(),
+            'maximized': self.isMaximized()
+        }
+        self.config_manager.save_configs(configs)
         event.accept()
 
     def center(self): 
@@ -391,6 +571,133 @@ class MainWindow(QMainWindow):
         cp = QDesktopWidget().availableGeometry().center()
         qr.moveCenter(cp)
         self.move(qr.topLeft())
+
+    def setup_sidebar(self):
+        """Creates a compact sidebar with icon-only buttons"""
+        self.sidebar = QWidget()
+        self.sidebar.setFixedWidth(60)
+        self.sidebar.setStyleSheet("""
+            QWidget {
+                background-color: #2D2D2D;
+                border-right: 1px solid #404040;
+            }
+        """)
+        
+        sidebar_layout = QVBoxLayout(self.sidebar)
+        sidebar_layout.setContentsMargins(5, 8, 5, 8)
+        sidebar_layout.setSpacing(6)
+        
+        # Logo icon
+        logo_btn = QPushButton("🚀")
+        logo_btn.setStyleSheet(self._get_sidebar_icon_style(logo=True))
+        logo_btn.setEnabled(False)
+        logo_btn.setToolTip("ProxManager")
+        sidebar_layout.addWidget(logo_btn)
+        
+        # Separator
+        separator = QFrame()
+        separator.setFrameStyle(QFrame.HLine)
+        separator.setStyleSheet("color: #404040; margin: 5px 0;")
+        sidebar_layout.addWidget(separator)
+        
+        # Dashboard button (current page)
+        dashboard_btn = QPushButton("🏠")
+        dashboard_btn.setStyleSheet(self._get_sidebar_icon_style(active=True))
+        dashboard_btn.setEnabled(False)
+        dashboard_btn.setToolTip("Dashboard")
+        sidebar_layout.addWidget(dashboard_btn)
+        
+        # Add spacer
+        sidebar_layout.addStretch()
+        
+        # Settings button
+        self.settings_btn = QPushButton("⚙️")
+        self.settings_btn.setStyleSheet(self._get_sidebar_icon_style())
+        self.settings_btn.clicked.connect(self.show_settings)
+        self.settings_btn.setToolTip("Configurações")
+        sidebar_layout.addWidget(self.settings_btn)
+        
+        # Logout button
+        self.logout_btn = QPushButton("🚪")
+        self.logout_btn.setStyleSheet(self._get_sidebar_icon_style(logout=True))
+        self.logout_btn.clicked.connect(self.logout)
+        self.logout_btn.setToolTip("Logout")
+        sidebar_layout.addWidget(self.logout_btn)
+
+    def _get_sidebar_icon_style(self, active=False, logout=False, logo=False):
+        """Returns the stylesheet for sidebar icon buttons"""
+        if logo:
+            return """
+                QPushButton {
+                    background-color: transparent;
+                    color: #00A3CC;
+                    border: none;
+                    padding: 6px;
+                    text-align: center;
+                    border-radius: 6px;
+                    font-size: 16px;
+                    font-weight: bold;
+                    min-width: 32px;
+                    min-height: 32px;
+                }
+            """
+        elif active:
+            return """
+                QPushButton {
+                    background-color: #00A3CC;
+                    color: white;
+                    border: none;
+                    padding: 6px;
+                    text-align: center;
+                    border-radius: 6px;
+                    font-size: 14px;
+                    font-weight: bold;
+                    min-width: 32px;
+                    min-height: 32px;
+                }
+            """
+        elif logout:
+            return """
+                QPushButton {
+                    background-color: transparent;
+                    color: #DC3545;
+                    border: 1px solid #DC3545;
+                    padding: 6px;
+                    text-align: center;
+                    border-radius: 6px;
+                    font-size: 14px;
+                    min-width: 32px;
+                    min-height: 32px;
+                }
+                QPushButton:hover {
+                    background-color: #DC3545;
+                    color: white;
+                }
+                QPushButton:pressed {
+                    background-color: #B52D37;
+                }
+            """
+        else:
+            return """
+                QPushButton {
+                    background-color: transparent;
+                    color: #CCCCCC;
+                    border: none;
+                    padding: 6px;
+                    text-align: center;
+                    border-radius: 6px;
+                    font-size: 14px;
+                    min-width: 32px;
+                    min-height: 32px;
+                }
+                QPushButton:hover {
+                    background-color: #404040;
+                    color: white;
+                }
+                QPushButton:pressed {
+                    background-color: #505050;
+                }
+            """
 
     # --------------------------------------------------------------------------
     # --- Métodos de Controle do Node
@@ -419,3 +726,129 @@ class MainWindow(QMainWindow):
                 QMessageBox.information(self, "Shutdown Iniciado", "Comando de shutdown enviado. O Node será desligado.", QMessageBox.Ok)
             else:
                 QMessageBox.critical(self, "Erro de API", "ERRO ao tentar desligar o Node.", QMessageBox.Ok)
+
+    # --------------------------------------------------------------------------
+    # --- Métodos do Sidebar
+    # --------------------------------------------------------------------------
+
+    def logout(self):
+        """Logout and return to login window"""
+        reply = QMessageBox.question(
+            self, "Logout", 
+            "Tem certeza que deseja fazer logout?",
+            QMessageBox.Yes | QMessageBox.No, 
+            QMessageBox.No
+        )
+        
+        if reply == QMessageBox.Yes:
+            # Stop the timer
+            if hasattr(self, 'timer') and self.timer:
+                self.timer.stop()
+            
+            # Clear any stored credentials if auto_login is disabled
+            login_data = self.config_manager.load_login_data()
+            if not login_data.get('auto_login', False):
+                login_data['password'] = ""
+                self.config_manager.save_login_data(login_data)
+            
+            # Close this window and show login
+            self.close()
+            
+            # Import and show login window
+            from .login_window import LoginWindow
+            self.login_window = LoginWindow()
+            self.login_window.show()
+
+    def show_settings(self):
+        """Show settings dialog"""
+        from PyQt5.QtWidgets import QDialog, QFormLayout, QSpinBox, QCheckBox, QDialogButtonBox
+        
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Configurações")
+        dialog.setFixedSize(450, 350)
+        dialog.setStyleSheet("""
+            QDialog {
+                background-color: #2D2D2D;
+                color: white;
+            }
+            QLabel {
+                color: #CCCCCC;
+                font-size: 12px;
+            }
+            QSpinBox, QCheckBox {
+                background-color: #404040;
+                border: 1px solid #555555;
+                color: white;
+                padding: 5px;
+                border-radius: 3px;
+            }
+        """)
+        
+        layout = QFormLayout(dialog)
+        
+        # Load current configurations
+        configs = self.config_manager.load_configs()
+        login_data = self.config_manager.load_login_data()
+        
+        # Timer interval setting
+        timer_spinbox = QSpinBox()
+        timer_spinbox.setMinimum(100)
+        timer_spinbox.setMaximum(5000)
+        timer_spinbox.setSuffix(" ms")
+        timer_spinbox.setValue(configs.get('timer_interval', self.timer_interval))
+        layout.addRow("Intervalo de Atualização:", timer_spinbox)
+        
+        # Auto-refresh setting
+        auto_refresh_check = QCheckBox()
+        auto_refresh_check.setChecked(configs.get('auto_refresh', True))
+        layout.addRow("Atualização Automática:", auto_refresh_check)
+        
+        # Auto-login setting
+        auto_login_check = QCheckBox()
+        auto_login_check.setChecked(login_data.get('auto_login', False))
+        layout.addRow("Login Automático:", auto_login_check)
+        
+        # Buttons
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.Ok | QDialogButtonBox.Cancel,
+            Qt.Horizontal, dialog
+        )
+        buttons.setStyleSheet("""
+            QPushButton {
+                background-color: #404040;
+                color: white;
+                border: 1px solid #555555;
+                padding: 8px 15px;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background-color: #505050;
+            }
+        """)
+        layout.addWidget(buttons)
+        
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        
+        if dialog.exec_() == QDialog.Accepted:
+            # Apply settings
+            self.timer_interval = timer_spinbox.value()
+            
+            if auto_refresh_check.isChecked():
+                if not self.timer.isActive():
+                    self.timer.start(self.timer_interval)
+                else:
+                    self.timer.setInterval(self.timer_interval)
+            else:
+                self.timer.stop()
+            
+            # Save application settings
+            configs['timer_interval'] = self.timer_interval
+            configs['auto_refresh'] = auto_refresh_check.isChecked()
+            self.config_manager.save_configs(configs)
+            
+            # Save login settings
+            login_data['auto_login'] = auto_login_check.isChecked()
+            self.config_manager.save_login_data(login_data)
+            
+            QMessageBox.information(self, "Configurações", "Configurações salvas com sucesso!", QMessageBox.Ok)

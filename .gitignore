@@ -26,6 +26,8 @@ share/python-wheels/
 *.egg
 MANIFEST
 configs.json
+vm_groups.json
+login.json
 
 # PyInstaller
 #  Usually these files are written by a python script from a template
