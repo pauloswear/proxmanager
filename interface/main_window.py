@@ -38,8 +38,6 @@ class MainWindow(QMainWindow):
         node_name = self.controller.api_client.node if hasattr(self.controller.api_client, 'node') else 'N/A'
         self.setWindowTitle(f"ProxManager - Node: {node_name}")
         
-        self.load_geometry() 
-        
         self.setStyleSheet("background-color: #1E1E1E; color: white;") 
         
         central_widget = QWidget()
@@ -71,6 +69,9 @@ class MainWindow(QMainWindow):
         self.setup_header()
         self.setup_tree_view()
         self.setup_footer() 
+        
+        # Load geometry after all UI is setup (delayed to ensure proper rendering)
+        QTimer.singleShot(50, self.load_geometry)
         
         self.initial_load()
         
@@ -251,50 +252,60 @@ class MainWindow(QMainWindow):
     def update_node_metrics(self, status_data: Optional[Dict[str, Any]]):
         """ Atualiza as métricas do Node usando dados fornecidos. """
         
-        if not status_data:
-            self.cpu_label.setText("CPU: ERROR")
-            self.mem_label.setText("RAM: ERROR")
-            self.load_label.setText("Load Avg: ERROR")
-            self.uptime_label.setText("Uptime: ERROR")
+        # Check if widgets still exist
+        if not hasattr(self, 'system_metrics') or not self.system_metrics:
             return
             
-        cpu_usage = status_data.get('cpu', 0.0) * 100
-        
-        load_avg_list = status_data.get('loadavg', [0, 0, 0])
         try:
-            load_value = float(load_avg_list[0]) 
-            load_avg_str = f"{load_value:.2f}"
-        except (ValueError, TypeError, IndexError):
-            load_avg_str = "N/A"
-        
-        mem_total = status_data.get('memory', {}).get('total', 0)
-        mem_used = status_data.get('memory', {}).get('used', 0)
-        
-        if mem_total > 0:
-            mem_percent = (mem_used / mem_total) * 100
-            mem_used_gb = mem_used / (1024**3)
-            mem_total_gb = mem_total / (1024**3)
-            mem_text = f"RAM: {mem_percent:.1f}% ({mem_used_gb:.1f}/{mem_total_gb:.1f} GB)"
-        else:
-            mem_text = "RAM: N/A"
-
-        uptime_seconds = status_data.get('uptime', 0)
-        days = uptime_seconds // 86400
-        hours = (uptime_seconds % 86400) // 3600
-        minutes = (uptime_seconds % 3600) // 60
-        uptime_text = f"Uptime: {days}d {hours}h {minutes}m"
+            if not status_data:
+                self.system_metrics.setText("CPU: -- | RAM: --")
+                return
+                
+            cpu_usage = status_data.get('cpu', 0.0) * 100
             
-        self.cpu_label.setText(f"CPU: {cpu_usage:.1f}%")
-        self.mem_label.setText(mem_text)
-        self.load_label.setText(f"Load Avg: {load_avg_str}")
-        self.uptime_label.setText(uptime_text)
+            mem_total = status_data.get('memory', {}).get('total', 0)
+            mem_used = status_data.get('memory', {}).get('used', 0)
+            
+            if mem_total > 0:
+                mem_percent = (mem_used / mem_total) * 100
+                mem_used_gb = mem_used / (1024**3)
+                mem_total_gb = mem_total / (1024**3)
+                mem_str = f"{mem_percent:.0f}% ({mem_used_gb:.1f}/{mem_total_gb:.1f}GB)"
+            else:
+                mem_str = "--"
+                mem_percent = 0
+
+            # Define colors based on usage
+            cpu_color = "#4CAF50" if cpu_usage < 70 else "#FF9800" if cpu_usage < 90 else "#F44336"
+            ram_color = "#4CAF50" if mem_percent < 70 else "#FF9800" if mem_percent < 90 else "#F44336"
+
+            # Update the compact metrics display with colors
+            metrics_html = f"<span style='color: #CCCCCC;'>CPU:</span> <span style='color: {cpu_color};'>{cpu_usage:.0f}%</span> <span style='color: #666;'>|</span> <span style='color: #CCCCCC;'>RAM:</span> <span style='color: {ram_color};'>{mem_str}</span>"
+            self.system_metrics.setText(metrics_html)
+            
+        except RuntimeError:
+            # Widget was deleted, ignore the update
+            pass
 
 
     def update_vms_widgets(self, vms_list: Optional[List[Dict[str, Any]]]):
         """Updates VM tree with status count and applies filters"""
         if not vms_list:
-            self.online_label.setText("🚀 Online: 0")
-            self.offline_label.setText("🛑 Offline: 0")
+            if hasattr(self, 'vm_counts'):
+                try:
+                    vm_text = "VMs: <span style='color: #4CAF50;'>0 online</span>, <span style='color: #F44336;'>0 offline</span>"
+                    self.vm_counts.setText(vm_text)
+                    
+                    # Set status dot to gray when no VMs
+                    if hasattr(self, 'status_dot'):
+                        self.status_dot.setStyleSheet("""
+                            QLabel {
+                                color: #666666;
+                                font-size: 10pt;
+                            }
+                        """)
+                except RuntimeError:
+                    pass
             self.unfiltered_vms_list = []
             self.apply_filters()
             return
@@ -312,9 +323,29 @@ class MainWindow(QMainWindow):
             else:
                 offline_count += 1
         
-        # Update status labels
-        self.online_label.setText(f"🚀 Online: {online_count}")
-        self.offline_label.setText(f"🛑 Offline: {offline_count}")
+        # Update VM counts in footer with colors and status dot
+        if hasattr(self, 'vm_counts'):
+            try:
+                vm_text = f"VMs: <span style='color: #4CAF50;'>{online_count} online</span>, <span style='color: #F44336;'>{offline_count} offline</span>"
+                self.vm_counts.setText(vm_text)
+                
+                # Update status dot color based on VMs status
+                if hasattr(self, 'status_dot'):
+                    if online_count > 0:
+                        dot_color = "#4CAF50"  # Green if any VMs online
+                    elif offline_count > 0:
+                        dot_color = "#F44336"  # Red if only offline VMs
+                    else:
+                        dot_color = "#666666"  # Gray if no VMs
+                    
+                    self.status_dot.setStyleSheet(f"""
+                        QLabel {{
+                            color: {dot_color};
+                            font-size: 10pt;
+                        }}
+                    """)
+            except RuntimeError:
+                pass
         
         # Apply filters (this will update the tree)
         self.apply_filters()
@@ -462,100 +493,80 @@ class MainWindow(QMainWindow):
         self.filter_container.setMaximumHeight(0)
 
     def setup_footer(self):
-        """ Configura o rodapé em duas linhas com melhor disposição. """
-        
+        """Clean and minimal footer"""
         footer_container = QWidget()
-        footer_v_layout = QVBoxLayout(footer_container)
-        # Margens e espaçamento do container principal
-        footer_v_layout.setContentsMargins(10, 5, 10, 5) 
-        footer_v_layout.setSpacing(5) 
-
-        footer_style = "font-weight: bold; font-size: 9pt;" 
-
-        # ----------------------------------------------------------------------
-        # --- LINHA 1: Status e Métricas (Distribuídas Horizontalmente) ---
-        # ----------------------------------------------------------------------
+        footer_container.setFixedHeight(28)
+        footer_container.setStyleSheet("""
+            QWidget {
+                background-color: #1E1E1E;
+                border-top: 1px solid #333333;
+            }
+        """)
         
-        status_metrics_widget = QWidget()
-        status_metrics_layout = QHBoxLayout(status_metrics_widget)
-        status_metrics_layout.setContentsMargins(0, 0, 0, 0)
-        status_metrics_layout.setSpacing(20) # Aumenta o espaçamento entre grupos
-
-        # --- GRUPO 1: Contadores (Online/Offline) - Extrema Esquerda
+        footer_layout = QHBoxLayout(footer_container)
+        footer_layout.setContentsMargins(16, 4, 16, 4)
+        footer_layout.setSpacing(0)
         
-        self.online_label = QLabel()
-        self.online_label.setStyleSheet("color: #28A745; " + footer_style)
-        self.offline_label = QLabel()
-        self.offline_label.setStyleSheet("color: #DC3545; " + footer_style)
+        # Left side: Status
+        status_container = QWidget()
+        status_layout = QHBoxLayout(status_container)
+        status_layout.setContentsMargins(0, 0, 0, 0)
+        status_layout.setSpacing(8)
         
-        # Removendo largura fixa para permitir que o texto defina a largura, mas mantendo a disposição à esquerda
-        status_metrics_layout.addWidget(self.online_label)
-        status_metrics_layout.addWidget(self.offline_label)
+        # Status dot (will change color based on VMs status)
+        self.status_dot = QLabel("●")
+        self.status_dot.setStyleSheet("""
+            QLabel {
+                color: #666666;
+                font-size: 10pt;
+            }
+        """)
         
-        # Adiciona um separador claro
-        separator_status_label = QLabel(" | ")
-        separator_status_label.setStyleSheet("color: #444444; font-size: 10pt;")
-        status_metrics_layout.addWidget(separator_status_label)
+        # VM counts
+        self.vm_counts = QLabel("VMs: 0 online, 0 offline")
+        self.vm_counts.setStyleSheet("""
+            QLabel {
+                color: #888888;
+                font-size: 8pt;
+                margin-left: 8px;
+            }
+        """)
         
-        # --- GRUPO 2: Métricas do Node (CPU, RAM, Load Avg, Uptime) - Centro
-
-        self.cpu_label = QLabel("CPU: N/A")
-        self.cpu_label.setStyleSheet("color: #00A3CC; " + footer_style)
-        self.mem_label = QLabel("RAM: N/A")
-        self.mem_label.setStyleSheet("color: #FFC107; " + footer_style)
-        self.load_label = QLabel("Load Avg: N/A") 
-        self.load_label.setStyleSheet("color: #DC3545; " + footer_style)
-        self.uptime_label = QLabel("Uptime: N/A") 
-        self.uptime_label.setStyleSheet("color: #999999; " + footer_style)
-
-        # Usamos setMinimumWidth para garantir que cada métrica tenha espaço suficiente,
-        # especialmente RAM, que tem mais texto (GB/GB).
-        self.cpu_label.setMinimumWidth(80) 
-        self.mem_label.setMinimumWidth(200) # Ajustado para acomodar o formato (X.X/Y.Y GB)
-        self.load_label.setMinimumWidth(100)
-        self.uptime_label.setMinimumWidth(120)
-
-        status_metrics_layout.addWidget(self.cpu_label)
-        status_metrics_layout.addWidget(self.mem_label)
-        status_metrics_layout.addWidget(self.load_label)
-        status_metrics_layout.addWidget(self.uptime_label)
+        status_layout.addWidget(self.status_dot)
+        status_layout.addWidget(self.vm_counts)
         
-        # Adiciona stretch para empurrar o copyright para a direita
-        status_metrics_layout.addStretch(1) 
+        footer_layout.addWidget(status_container)
+        footer_layout.addStretch()
         
-        footer_v_layout.addWidget(status_metrics_widget)
-
-        # --- SEPARADOR HORIZONTAL (Traço) ---
-        separator_line = QLabel()
-        separator_line.setFixedHeight(1)
-        separator_line.setStyleSheet("background-color: #333333; margin-top: 5px; margin-bottom: 5px;")
-        footer_v_layout.addWidget(separator_line)
+        # Center: System metrics (compact)
+        self.system_metrics = QLabel("CPU: -- | RAM: --")
+        self.system_metrics.setStyleSheet("""
+            QLabel {
+                color: #999999;
+                font-size: 8pt;
+                font-family: 'Segoe UI', 'Consolas', monospace;
+            }
+        """)
         
+        footer_layout.addWidget(self.system_metrics)
+        footer_layout.addStretch()
         
-        # ----------------------------------------------------------------------
-        # --- LINHA 2: CONTROLES, DEBUG e COPYRIGHT ---
-        # ----------------------------------------------------------------------
-        
-        controls_copyright_widget = QWidget()
-        controls_copyright_layout = QHBoxLayout(controls_copyright_widget)
-        controls_copyright_layout.setContentsMargins(0, 0, 0, 0)
-        
-        # --- GRUPO 3: Copyright (Direita) 
-        controls_copyright_layout.addStretch(1) # Stretch para empurrar o copyright para a direita
-
-        # --- GRUPO 4: Copyright (Extrema Direita)
+        # Right side: Copyright
         current_year = datetime.datetime.now().year
-        copyright_text = f"<span>© {current_year} - <a href='https://github.com/pauloswear' style='color: #00A3CC; text-decoration: none;'>Paulo Henrique</a></span>"
-        
+        copyright_text = f"© {current_year} <a href='https://github.com/pauloswear/proxmanager' style='color: #00A3CC; text-decoration: none;'>Paulo Henrique</a>"
         copyright_label = QLabel(copyright_text)
-        copyright_label.setStyleSheet("color: #888888; font-size: 8pt;")
+        copyright_label.setStyleSheet("""
+            QLabel {
+                color: #666666;
+                font-size: 8pt;
+            }
+        """)
         copyright_label.setOpenExternalLinks(True)
         
-        controls_copyright_layout.addWidget(copyright_label)
-        
-        footer_v_layout.addWidget(controls_copyright_widget)
-
+        footer_layout.addWidget(copyright_label)
         self.main_layout.addWidget(footer_container)
+
+
 
     # --------------------------------------------------------------------------
     # --- Utility Methods
@@ -565,23 +576,29 @@ class MainWindow(QMainWindow):
         configs = self.config_manager.load_configs()
         window_config = configs.get('window', {})
         
-        width = window_config.get('width', 800)
-        height = window_config.get('height', 600)
-        self.resize(width, height)
+        # Set size from saved config or defaults
+        width = window_config.get('width', 1200)
+        height = window_config.get('height', 800)
         
+        # Apply size and center the window
+        self.resize(width, height)
+        self.center()
+        
+        # Handle maximized state
         if window_config.get('maximized', False):
             self.showMaximized()
-        else:
-            self.center()
             
     def closeEvent(self, event):
         # Save window configuration
         configs = self.config_manager.load_configs()
+        
+        # Save only size and maximized state
         configs['window'] = {
             'width': self.size().width(),
             'height': self.size().height(),
             'maximized': self.isMaximized()
         }
+        
         self.config_manager.save_configs(configs)
         event.accept()
 

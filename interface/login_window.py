@@ -196,19 +196,32 @@ class LoginWindow(QMainWindow):
             controller = ProxmoxController(api_client, config_generator)
             
             # 5. Abre a janela principal (só se tudo estiver ok)
-            self.main_window = MainWindow(controller)
-            self.main_window.show()
-            self.close()
+            try:
+                self.main_window = MainWindow(controller)
+                self.main_window.show()
+                # Aguarda um pouco antes de fechar a janela de login
+                QTimer.singleShot(100, self.close)
+            except Exception as main_window_error:
+                raise Exception(f"Erro ao criar janela principal: {main_window_error}")
             
         except Exception as e:
             # ⭐️ Tratamento de erro ⭐️
             # Esta exceção captura falhas de rede, autenticação (da proxmoxer) 
             # ou a falha do Health Check (ConnectionError)
             
-            # Restaura o botão em caso de erro
-            self.connect_btn.setText("Connect")
-            self.connect_btn.setEnabled(True)
+            # Restaura o botão em caso de erro (com verificação de segurança)
+            try:
+                if hasattr(self, 'connect_btn') and self.connect_btn is not None:
+                    self.connect_btn.setText("Connect")
+                    self.connect_btn.setEnabled(True)
+            except RuntimeError:
+                # Widget já foi destruído, ignora
+                pass
             
-            QMessageBox.critical(self, "Falha na Conexão", 
-                                 f"Não foi possível conectar ao Proxmox.\nDetalhes do Erro: {e}")
-            # Não faz mais nada, pois a MainWindow não deve ser criada.
+            # Mostra erro de forma segura
+            try:
+                QMessageBox.critical(self, "Falha na Conexão", 
+                                   f"Não foi possível conectar ao Proxmox.\n\nDetalhes do Erro: {str(e)}")
+            except RuntimeError:
+                # Se a janela foi destruída, imprime no console
+                print(f"Erro de conexão: {e}")
