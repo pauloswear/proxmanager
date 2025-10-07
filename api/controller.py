@@ -4,7 +4,7 @@ import os
 import tempfile
 import subprocess
 from time import sleep
-from typing import Union
+from typing import Union, Tuple, Any, Dict, List
 from .api_client import ProxmoxAPIClient
 from .spice_viewer import ViewerConfigGenerator
 
@@ -14,6 +14,24 @@ class ProxmoxController:
     def __init__(self, api_client: ProxmoxAPIClient, config_generator: ViewerConfigGenerator):
         self.api_client = api_client
         self.config_generator = config_generator
+
+
+    def update_dashboard(self) -> Tuple[Dict[str, Any] | None, List[Dict[str, Any]] | None]:
+        """
+        Executa todas as chamadas de API necessárias para a atualização completa do dashboard.
+        Este método é chamado pela thread de background.
+        """
+        
+        # 1. Obter Status do Node (CPU, RAM, Load)
+        # Assumindo que você tem este método implementado no seu ProxmoxAPIClient
+        node_status = self.api_client.get_node_status()
+
+        # 2. Obter Lista de VMs/Containers
+        # Assumindo que você tem este método implementado no seu ProxmoxAPIClient
+        vms_list = self.api_client.get_vms_list()
+        
+        # O retorno é uma tupla contendo os dois resultados.
+        return node_status, vms_list
 
     def _get_remote_viewer_path(self):
         """ Obtém o caminho para o executável do visualizador remoto (remote-viewer) """
