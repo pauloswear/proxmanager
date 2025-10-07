@@ -25,7 +25,7 @@ A native desktop application built with **Python** and **PyQt5** for quick monit
 - [x] **Folders Organization**  
   Add folders to place servers within them, which will make organization easier
 
-- [ ] **Configuration Screen**  
+- [x] **Configuration Screen**  
   On the settings screen, options will be added to define whether Spice will open in full screen and whether auto resize will start checked or not.
 
 ---

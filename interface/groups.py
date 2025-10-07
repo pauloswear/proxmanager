@@ -22,6 +22,8 @@ class GroupManager:
         self.ungrouped_vms: List[int] = []
         # Order of groups for display (group names list)
         self.group_order: List[str] = []
+        # Estado de expansão dos grupos
+        self.group_expansion_state: Dict[str, bool] = {}
         self.load_groups()
 
     def load_groups(self):
@@ -39,6 +41,9 @@ class GroupManager:
                     
                     # Load group order
                     self.group_order = data.get('group_order', [])
+                    
+                    # Load group expansion state
+                    self.group_expansion_state = data.get('group_expansion_state', {})
 
                 print(f"Groups loaded from {CONFIG_FILE}.")
             except json.JSONDecodeError:
@@ -50,10 +55,20 @@ class GroupManager:
 
     def save_groups(self):
         """Saves the current group structure to JSON file."""
+        # Carregar dados existentes para preservar group_expansion_state
+        existing_data = {}
+        if os.path.exists(CONFIG_FILE):
+            try:
+                with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+                    existing_data = json.load(f)
+            except:
+                pass
+        
         data = {
             'groups': self.groups,
             'ungrouped_vms': self.ungrouped_vms,
-            'group_order': self.group_order
+            'group_order': self.group_order,
+            'group_expansion_state': existing_data.get('group_expansion_state', {})
         }
         try:
             # Create 'resources' folder if it doesn't exist
@@ -200,3 +215,35 @@ class GroupManager:
             grouped_vms["Não Agrupadas"] = final_ungrouped_list
             
         return grouped_vms
+
+    def get_group_expansion_state(self) -> Dict[str, bool]:
+        """Obtém o estado de expansão dos grupos do arquivo JSON."""
+        if os.path.exists(CONFIG_FILE):
+            try:
+                with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    return data.get('group_expansion_state', {})
+            except Exception as e:
+                print(f"Error loading group expansion state: {e}")
+        return {}
+
+    def save_group_expansion_state(self, expansion_state: Dict[str, bool]):
+        """Salva o estado de expansão dos grupos no arquivo JSON."""
+        try:
+            # Carregar dados existentes
+            existing_data = {}
+            if os.path.exists(CONFIG_FILE):
+                with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+                    existing_data = json.load(f)
+            
+            # Atualizar apenas o estado de expansão
+            existing_data['group_expansion_state'] = expansion_state
+            
+            # Salvar de volta
+            os.makedirs(os.path.dirname(CONFIG_FILE), exist_ok=True)
+            with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+                json.dump(existing_data, f, indent=4)
+                
+            print(f"Group expansion state saved to {CONFIG_FILE}.")
+        except Exception as e:
+            print(f"Error saving group expansion state: {e}")

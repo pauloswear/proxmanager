@@ -153,11 +153,17 @@ class GroupItem(QTreeWidgetItem):
         """Expands this group item"""
         self.setExpanded(True)
         tree_widget.expandItem(self)
+        # Salva o estado após a expansão
+        if hasattr(tree_widget, '_save_expansion_state'):
+            tree_widget._save_expansion_state()
     
     def _collapse_group(self, tree_widget):
         """Collapses this group item"""
         self.setExpanded(False)
         tree_widget.collapseItem(self)
+        # Salva o estado após o colapso
+        if hasattr(tree_widget, '_save_expansion_state'):
+            tree_widget._save_expansion_state()
     
     def update_display(self, vm_count: int):
         """Updates the VM count in the widget"""
@@ -187,6 +193,7 @@ class VMTreeWidget(QTreeWidget):
         self.setup_tree()
         self.setup_drag_drop()
         self.setup_context_menu()
+        self.setup_expansion_signals()
     
     def setup_tree(self):
         """Configures the basic appearance and behavior of the tree"""
@@ -250,6 +257,19 @@ class VMTreeWidget(QTreeWidget):
                 background: transparent;
             }
         """)
+    
+    def setup_expansion_signals(self):
+        """Conecta sinais de expansão/colapso para salvar estado"""
+        self.itemExpanded.connect(self._on_item_expanded)
+        self.itemCollapsed.connect(self._on_item_collapsed)
+    
+    def _on_item_expanded(self, item):
+        """Callback quando um item é expandido"""
+        self._save_expansion_state()
+    
+    def _on_item_collapsed(self, item):
+        """Callback quando um item é colapsado"""
+        self._save_expansion_state()
     
     def setup_drag_drop(self):
         """Configures drag and drop functionality"""
@@ -318,8 +338,16 @@ class VMTreeWidget(QTreeWidget):
         if self.is_dragging or self.mouse_over_widget:
             return
         
-        # Save expansion state of groups, scroll position, and selection
-        expanded_groups = self._save_expansion_state()
+        # Save current expansion state (sem sobrescrever o persistido ainda)
+        current_expanded_groups = self._get_current_expansion_state()
+        
+        # Carregar estado persistido do GroupManager
+        persistent_expansion_state = self.group_manager.get_group_expansion_state()
+        
+        # Combinar estado atual com persistido (atual tem prioridade)
+        expanded_groups = persistent_expansion_state.copy()
+        expanded_groups.update(current_expanded_groups)
+            
         scroll_position = self._save_scroll_position()
         selection_state = self._save_selection_state()
         
@@ -443,8 +471,8 @@ class VMTreeWidget(QTreeWidget):
         
         return other_groups
     
-    def _save_expansion_state(self) -> Dict[str, bool]:
-        """Saves the expansion state of groups"""
+    def _get_current_expansion_state(self) -> Dict[str, bool]:
+        """Gets the current expansion state of groups without saving"""
         state = {}
         for i in range(self.topLevelItemCount()):
             item = self.topLevelItem(i)
@@ -452,6 +480,15 @@ class VMTreeWidget(QTreeWidget):
                 data = item.data(0, Qt.UserRole)
                 if data and data.get('type') == 'group':
                     state[data['group_name']] = item.isExpanded()
+        return state
+    
+    def _save_expansion_state(self) -> Dict[str, bool]:
+        """Saves the expansion state of groups to persistent storage"""
+        state = self._get_current_expansion_state()
+        
+        # Persistir estado no GroupManager
+        self.group_manager.save_group_expansion_state(state)
+        
         return state
     
     def _save_scroll_position(self) -> dict:

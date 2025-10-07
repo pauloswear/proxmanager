@@ -502,26 +502,7 @@ class MainWindow(QMainWindow):
         controls_copyright_layout = QHBoxLayout(controls_copyright_widget)
         controls_copyright_layout.setContentsMargins(0, 0, 0, 0)
         
-        # --- GRUPO 3: Botões de Ação e Debug (Esquerda)
-        
-        self.node_restart_btn = QPushButton("♻️ RESTART NODE")
-        self.node_restart_btn.setStyleSheet("""
-            QPushButton { height: 25px; border-radius: 4px; font-size: 8pt; font-weight: bold; background-color: #505030; color: #FFC107; }
-            QPushButton:hover { background-color: #606040; }
-        """)
-        self.node_restart_btn.setFixedSize(120, 25)
-        self.node_restart_btn.clicked.connect(self.on_node_restart_clicked) 
-        controls_copyright_layout.addWidget(self.node_restart_btn)
-
-        self.node_shutdown_btn = QPushButton("🛑 SHUTDOWN NODE")
-        self.node_shutdown_btn.setStyleSheet("""
-            QPushButton { height: 25px; border-radius: 4px; font-size: 8pt; font-weight: bold; background-color: #503030; color: #DC3545; margin-left: 10px; }
-            QPushButton:hover { background-color: #604040; }
-        """)
-        self.node_shutdown_btn.setFixedSize(130, 25)
-        self.node_shutdown_btn.clicked.connect(self.on_node_shutdown_clicked) 
-        controls_copyright_layout.addWidget(self.node_shutdown_btn)
-        
+        # --- GRUPO 3: Copyright (Direita) 
         controls_copyright_layout.addStretch(1) # Stretch para empurrar o copyright para a direita
 
         # --- GRUPO 4: Copyright (Extrema Direita)
@@ -617,6 +598,20 @@ class MainWindow(QMainWindow):
         self.settings_btn.setToolTip("Configurações")
         sidebar_layout.addWidget(self.settings_btn)
         
+        # Node Restart button
+        self.node_restart_btn = QPushButton("♻️")
+        self.node_restart_btn.setStyleSheet(self._get_sidebar_icon_style(warning=True))
+        self.node_restart_btn.clicked.connect(self.on_node_restart_clicked)
+        self.node_restart_btn.setToolTip("Restart Node")
+        sidebar_layout.addWidget(self.node_restart_btn)
+        
+        # Node Shutdown button
+        self.node_shutdown_btn = QPushButton("🛑")
+        self.node_shutdown_btn.setStyleSheet(self._get_sidebar_icon_style(danger=True))
+        self.node_shutdown_btn.clicked.connect(self.on_node_shutdown_clicked)
+        self.node_shutdown_btn.setToolTip("Shutdown Node")
+        sidebar_layout.addWidget(self.node_shutdown_btn)
+        
         # Logout button
         self.logout_btn = QPushButton("🚪")
         self.logout_btn.setStyleSheet(self._get_sidebar_icon_style(logout=True))
@@ -624,7 +619,7 @@ class MainWindow(QMainWindow):
         self.logout_btn.setToolTip("Logout")
         sidebar_layout.addWidget(self.logout_btn)
 
-    def _get_sidebar_icon_style(self, active=False, logout=False, logo=False):
+    def _get_sidebar_icon_style(self, active=False, logout=False, logo=False, warning=False, danger=False):
         """Returns the stylesheet for sidebar icon buttons"""
         if logo:
             return """
@@ -675,6 +670,46 @@ class MainWindow(QMainWindow):
                 }
                 QPushButton:pressed {
                     background-color: #B52D37;
+                }
+            """
+        elif warning:
+            return """
+                QPushButton {
+                    background-color: transparent;
+                    color: #FFC107;
+                    border: none;
+                    padding: 6px;
+                    text-align: center;
+                    border-radius: 6px;
+                    font-size: 14px;
+                    min-width: 32px;
+                    min-height: 32px;
+                }
+                QPushButton:hover {
+                    background-color: #555555;
+                }
+                QPushButton:pressed {
+                    background-color: #444444;
+                }
+            """
+        elif danger:
+            return """
+                QPushButton {
+                    background-color: transparent;
+                    color: #DC3545;
+                    border: none;
+                    padding: 6px;
+                    text-align: center;
+                    border-radius: 6px;
+                    font-size: 14px;
+                    min-width: 32px;
+                    min-height: 32px;
+                }
+                QPushButton:hover {
+                    background-color: #555555;
+                }
+                QPushButton:pressed {
+                    background-color: #444444;
                 }
             """
         else:
@@ -761,52 +796,70 @@ class MainWindow(QMainWindow):
 
     def show_settings(self):
         """Show settings dialog"""
-        from PyQt5.QtWidgets import QDialog, QFormLayout, QSpinBox, QCheckBox, QDialogButtonBox
+        from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QGroupBox, QCheckBox, 
+                                   QDialogButtonBox, QFormLayout)
         
         dialog = QDialog(self)
         dialog.setWindowTitle("Configurações")
-        dialog.setFixedSize(450, 350)
+        dialog.setFixedSize(350, 200)
         dialog.setStyleSheet("""
             QDialog {
                 background-color: #2D2D2D;
                 color: white;
             }
-            QLabel {
-                color: #CCCCCC;
-                font-size: 12px;
+            QGroupBox {
+                font-weight: bold;
+                border: 2px solid #555555;
+                border-radius: 5px;
+                margin-top: 5px;
+                padding-top: 10px;
             }
-            QSpinBox, QCheckBox {
-                background-color: #404040;
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 5px 0 5px;
+                color: #CCCCCC;
+            }
+            QCheckBox {
+                color: #CCCCCC;
+                spacing: 5px;
+            }
+            QCheckBox::indicator {
+                width: 15px;
+                height: 15px;
+            }
+            QCheckBox::indicator:unchecked {
                 border: 1px solid #555555;
-                color: white;
-                padding: 5px;
+                background-color: #383838;
+                border-radius: 3px;
+            }
+            QCheckBox::indicator:checked {
+                border: 1px solid #00A3CC;
+                background-color: #00A3CC;
                 border-radius: 3px;
             }
         """)
         
-        layout = QFormLayout(dialog)
+        layout = QVBoxLayout(dialog)
         
         # Load current configurations
         configs = self.config_manager.load_configs()
-        login_data = self.config_manager.load_login_data()
         
-        # Timer interval setting
-        timer_spinbox = QSpinBox()
-        timer_spinbox.setMinimum(100)
-        timer_spinbox.setMaximum(5000)
-        timer_spinbox.setSuffix(" ms")
-        timer_spinbox.setValue(configs.get('timer_interval', self.timer_interval))
-        layout.addRow("Intervalo de Atualização:", timer_spinbox)
+        # SPICE GroupBox
+        spice_group = QGroupBox("SPICE")
+        spice_layout = QFormLayout(spice_group)
         
-        # Auto-refresh setting
-        auto_refresh_check = QCheckBox()
-        auto_refresh_check.setChecked(configs.get('auto_refresh', True))
-        layout.addRow("Atualização Automática:", auto_refresh_check)
+        # Start fullscreen checkbox
+        self.fullscreen_check = QCheckBox()
+        self.fullscreen_check.setChecked(configs.get('spice_fullscreen', False))
+        spice_layout.addRow("Start fullscreen:", self.fullscreen_check)
         
-        # Auto-login setting
-        auto_login_check = QCheckBox()
-        auto_login_check.setChecked(login_data.get('auto_login', False))
-        layout.addRow("Login Automático:", auto_login_check)
+        # Auto resize checkbox
+        self.autoresize_check = QCheckBox()
+        self.autoresize_check.setChecked(configs.get('spice_autoresize', False))
+        spice_layout.addRow("Auto resize:", self.autoresize_check)
+        
+        layout.addWidget(spice_group)
         
         # Buttons
         buttons = QDialogButtonBox(
@@ -831,24 +884,9 @@ class MainWindow(QMainWindow):
         buttons.rejected.connect(dialog.reject)
         
         if dialog.exec_() == QDialog.Accepted:
-            # Apply settings
-            self.timer_interval = timer_spinbox.value()
-            
-            if auto_refresh_check.isChecked():
-                if not self.timer.isActive():
-                    self.timer.start(self.timer_interval)
-                else:
-                    self.timer.setInterval(self.timer_interval)
-            else:
-                self.timer.stop()
-            
-            # Save application settings
-            configs['timer_interval'] = self.timer_interval
-            configs['auto_refresh'] = auto_refresh_check.isChecked()
+            # Save SPICE settings
+            configs['spice_fullscreen'] = self.fullscreen_check.isChecked()
+            configs['spice_autoresize'] = self.autoresize_check.isChecked()
             self.config_manager.save_configs(configs)
             
-            # Save login settings
-            login_data['auto_login'] = auto_login_check.isChecked()
-            self.config_manager.save_login_data(login_data)
-            
-            QMessageBox.information(self, "Configurações", "Configurações salvas com sucesso!", QMessageBox.Ok)
+            QMessageBox.information(self, "Configurações", "Configurações SPICE salvas com sucesso!", QMessageBox.Ok)

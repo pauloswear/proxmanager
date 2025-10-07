@@ -1,10 +1,10 @@
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QLineEdit, QMessageBox, QGridLayout, 
-    QDesktopWidget, QLabel, QPushButton
+    QDesktopWidget, QLabel, QPushButton, QCheckBox
 )
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QFont
-from utils.utilities import load_config, save_config
+from utils.config_manager import ConfigManager
 from api import ProxmoxAPIClient, ViewerConfigGenerator, ProxmoxController
 from utils import set_dark_title_bar
 from .main_window import MainWindow 
@@ -16,7 +16,8 @@ class LoginWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         set_dark_title_bar(self.winId())
-        self.config_data = load_config()
+        self.config_manager = ConfigManager()
+        self.login_data = self.config_manager.load_login_data()
         self.setWindowTitle("ProxManager - Login")
         
         self.resize(450, 300)
@@ -30,6 +31,9 @@ class LoginWindow(QMainWindow):
         self.layout.setAlignment(Qt.AlignCenter)
         
         self.setup_ui()
+        
+        # Verifica se deve fazer auto-login após a UI estar pronta
+        QTimer.singleShot(500, self.check_auto_login)
         
     def center(self):
         """ Centraliza a janela na tela do monitor. """
@@ -55,31 +59,57 @@ class LoginWindow(QMainWindow):
 
         # Campo HOST IP
         form_layout.addWidget(QLabel("IP/Host:"), 0, 0)
-        self.host_input = QLineEdit(text=self.config_data.get("host_ip", ""))
+        self.host_input = QLineEdit(text=self.login_data.get("host_ip", ""))
         self.host_input.setPlaceholderText("Ex: 192.168.1.10:8006 (optional port)")
         self.host_input.setStyleSheet(input_style)
         form_layout.addWidget(self.host_input, 0, 1)
 
         # Campo Usuário
         form_layout.addWidget(QLabel("User:"), 1, 0)
-        self.user_input = QLineEdit(text=self.config_data.get("user", ""))
+        self.user_input = QLineEdit(text=self.login_data.get("user", ""))
         self.user_input.setPlaceholderText("Ex: root@pam or name@pve")
         self.user_input.setStyleSheet(input_style)
         form_layout.addWidget(self.user_input, 1, 1)
         
         # Campo Senha
         form_layout.addWidget(QLabel("Password:"), 2, 0)
-        self.password_input = QLineEdit(text=self.config_data.get("password", ""))
+        self.password_input = QLineEdit(text=self.login_data.get("password", ""))
         self.password_input.setEchoMode(QLineEdit.Password)
         self.password_input.setStyleSheet(input_style)
         form_layout.addWidget(self.password_input, 2, 1)
 
         # Campo TOTP
         form_layout.addWidget(QLabel("TOTP:"), 3, 0)
-        self.totp_input = QLineEdit(text=self.config_data.get("totp", "") or "")
+        self.totp_input = QLineEdit(text=self.login_data.get("totp", "") or "")
         self.totp_input.setPlaceholderText("Opcional")
         self.totp_input.setStyleSheet(input_style)
         form_layout.addWidget(self.totp_input, 3, 1)
+
+        # Checkbox Login Automático
+        self.auto_login_check = QCheckBox("Lembrar login e conectar automaticamente")
+        self.auto_login_check.setChecked(self.login_data.get('auto_login', False))
+        self.auto_login_check.setStyleSheet("""
+            QCheckBox {
+                color: #CCCCCC;
+                spacing: 5px;
+                margin-top: 10px;
+            }
+            QCheckBox::indicator {
+                width: 15px;
+                height: 15px;
+            }
+            QCheckBox::indicator:unchecked {
+                border: 1px solid #555555;
+                background-color: #383838;
+                border-radius: 3px;
+            }
+            QCheckBox::indicator:checked {
+                border: 1px solid #00A3CC;
+                background-color: #00A3CC;
+                border-radius: 3px;
+            }
+        """)
+        form_layout.addWidget(self.auto_login_check, 4, 0, 1, 2)
 
         self.layout.addWidget(form_widget)
         
@@ -98,6 +128,30 @@ class LoginWindow(QMainWindow):
         self.password_input.returnPressed.connect(self.attempt_login)
         self.host_input.returnPressed.connect(self.attempt_login)
 
+    def check_auto_login(self):
+        """
+        Verifica se deve executar auto-login baseado nas configurações salvas.
+        """
+        # Verifica se auto-login está habilitado
+        if not self.login_data.get('auto_login', False):
+            return
+        
+        # Verifica se todos os dados necessários estão preenchidos
+        host_ip = self.host_input.text().strip()
+        user = self.user_input.text().strip() 
+        password = self.password_input.text().strip()
+        
+        if host_ip and user and password:
+            # Atualiza o checkbox para mostrar o estado correto
+            self.auto_login_check.setChecked(True)
+            
+            # Mostra mensagem de conectando
+            self.connect_btn.setText("Conectando...")
+            self.connect_btn.setEnabled(False)
+            
+            # Executa o login automaticamente
+            QTimer.singleShot(1000, self.attempt_login)  # Aguarda 1 segundo para o usuário ver a tela
+
     def attempt_login(self):
         """ 
         Tenta inicializar o ProxmoxController e abre a MainWindow.
@@ -112,6 +166,10 @@ class LoginWindow(QMainWindow):
             QMessageBox.warning(self, "Erro de Login", "Por favor, preencha o Host/IP, Usuário e Senha.")
             return
         
+        # Mostra mensagem de conectando
+        self.connect_btn.setText("Conectando...")
+        self.connect_btn.setEnabled(False)
+        
         # ⭐️ O bloco try/except deve englobar TUDO o que pode falhar
         try:
             # 1. Tenta inicializar o cliente API
@@ -123,8 +181,15 @@ class LoginWindow(QMainWindow):
             if api_client.get_node_status() is None:
                  raise ConnectionError("Conexão bem-sucedida, mas falha ao obter status do Node (Verifique permissões ou HA).")
 
-            # 3. Salva as credenciais (se o Health Check passou)
-            save_config(host_ip, user, password, totp)
+            # 3. Salva as credenciais no login.json (se o Health Check passou)
+            login_data = {
+                'host_ip': host_ip,
+                'user': user, 
+                'password': password,
+                'totp': totp,
+                'auto_login': self.auto_login_check.isChecked()
+            }
+            self.config_manager.save_login_data(login_data)
             
             # 4. Cria o restante do controlador
             config_generator = ViewerConfigGenerator(host_ip=host_ip)
@@ -139,6 +204,11 @@ class LoginWindow(QMainWindow):
             # ⭐️ Tratamento de erro ⭐️
             # Esta exceção captura falhas de rede, autenticação (da proxmoxer) 
             # ou a falha do Health Check (ConnectionError)
+            
+            # Restaura o botão em caso de erro
+            self.connect_btn.setText("Connect")
+            self.connect_btn.setEnabled(True)
+            
             QMessageBox.critical(self, "Falha na Conexão", 
                                  f"Não foi possível conectar ao Proxmox.\nDetalhes do Erro: {e}")
             # Não faz mais nada, pois a MainWindow não deve ser criada.

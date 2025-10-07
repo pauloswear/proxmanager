@@ -119,8 +119,24 @@ class ProxmoxController:
                 temp_file.write(vv_content)
                 inifile_path = temp_file.name
             
+            # 4. Carregar configurações SPICE
+            from utils.config_manager import ConfigManager
+            config_manager = ConfigManager()
+            configs = config_manager.load_configs()
+            
+            # Preparar argumentos para o viewer
+            viewer_args = [viewer_path]
+            
+            # Auto-resize baseado na configuração
+            if configs.get('spice_autoresize', False):
+                viewer_args.append("--auto-resize=true")
+            else:
+                viewer_args.append("--auto-resize=never")
+            
+            viewer_args.append(inifile_path)
+            
             print(f"Iniciando VM {vmid} via {protocol.upper()}...")
-            subprocess.Popen([viewer_path, "--auto-resize=never", inifile_path]) 
+            subprocess.Popen(viewer_args) 
             sleep(5) 
             return True
 
