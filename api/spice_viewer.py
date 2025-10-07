@@ -56,7 +56,8 @@ class ViewerConfigGenerator:
                 f"secure-attention={json_data.get('secure-attention', 'ctrl+alt+end')}",
                 f"release-cursor={json_data.get('release-cursor', 'shift+f12')}",
                 f"toggle-fullscreen={json_data.get('toggle-fullscreen', 'no')}",
-                f"fullscreen=1"
+                f"fullscreen=0",
+                f"auto-resize=never"
             ])
             
         elif protocol == 'vnc':

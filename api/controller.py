@@ -120,7 +120,7 @@ class ProxmoxController:
                 inifile_path = temp_file.name
             
             print(f"Iniciando VM {vmid} via {protocol.upper()}...")
-            subprocess.Popen([viewer_path, inifile_path]) 
+            subprocess.Popen([viewer_path, "--auto-resize=never", inifile_path]) 
             sleep(5) 
             return True
 
