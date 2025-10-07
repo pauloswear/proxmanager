@@ -129,7 +129,7 @@ class ProxmoxController:
             
             # Auto-resize baseado na configuração
             if configs.get('spice_autoresize', False):
-                viewer_args.append("--auto-resize=true")
+                viewer_args.append("--auto-resize=always")
             else:
                 viewer_args.append("--auto-resize=never")
             
