@@ -1,0 +1,87 @@
+# utils.py
+import ctypes
+import os
+import json
+import traceback 
+from typing import Dict, Any
+from PyQt5.QtCore import QRunnable, QThreadPool
+from api import ProxmoxController # Assume que ProxmoxController está acessível
+
+# --- CONSTANTES ---
+CONFIG_FILE = "configs.json"
+
+
+# Para Windows 10/11 - modo escuro na barra de título
+def set_dark_title_bar(hwnd):
+    # Ativa o modo escuro na barra de título
+    DWMWA_USE_IMMERSIVE_DARK_MODE = 20
+    set_window_attribute = ctypes.windll.dwmapi.DwmSetWindowAttribute
+    set_window_attribute(int(hwnd), DWMWA_USE_IMMERSIVE_DARK_MODE, 
+                        ctypes.byref(ctypes.c_int(1)), 
+                        ctypes.sizeof(ctypes.c_int))
+
+
+
+# --- FUNÇÕES DE GERENCIAMENTO DE CONFIGURAÇÃO ---
+
+def load_config() -> Dict[str, Any]:
+    """ Carrega as configurações de login do arquivo JSON. """
+    if os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, 'r') as f:
+                return json.load(f)
+        except json.JSONDecodeError:
+            print("Aviso: Arquivo configs.json inválido. Criando um novo.")
+    
+    # Retorna o modelo padrão
+    return {
+        "host_ip": "100.82.234.124", 
+        "user": "root@pam",
+        "password": "",
+        "totp": None
+    }
+
+def save_config(host: str, user: str, password: str, totp: str | None):
+    """ Salva as credenciais de login no arquivo JSON. """
+    config = {
+        "host_ip": host,
+        "user": user,
+        "password": password,
+        "totp": totp
+    }
+    try:
+        with open(CONFIG_FILE, 'w') as f:
+            json.dump(config, f, indent=4)
+    except IOError as e:
+        print(f"Erro ao salvar o arquivo de configuração: {e}")
+
+
+# --- CLASSE WORKER PARA EXECUTAR TAREFAS EM SEGUNDO PLANO ---
+class ViewerWorker(QRunnable):
+    """
+    QRunnable para executar a conexão do viewer (SPICE/VNC) em um thread.
+    Isso evita que a GUI congele durante o processo de conexão.
+    """
+    def __init__(self, controller: ProxmoxController, vmid: int, protocol: str):
+        super().__init__()
+        self.controller = controller
+        self.vmid = vmid
+        self.protocol = protocol
+        # Garante que o worker seja deletado após a execução
+        self.setAutoDelete(True) 
+
+    def run(self):
+        """ Lógica que será executada no thread separado. """
+        try:
+            print(f"Worker: Tentando conectar via {self.protocol.upper()} para VM {self.vmid}...")
+            # A chamada que bloqueia a thread principal é movida para aqui
+            success = self.controller.start_viewer(self.vmid, protocol=self.protocol)
+            
+            if not success and self.protocol == 'spice':
+                 print(f"Worker: SPICE falhou. Tentando VNC para VM {self.vmid}...")
+                 self.controller.start_viewer(self.vmid, protocol='vnc')
+
+        except Exception as e:
+            # Captura exceções no thread para depuração
+            print(f"ERRO no ViewerWorker para VM {self.vmid}: {e}")
+            traceback.print_exc()
