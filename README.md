@@ -14,6 +14,15 @@ A native desktop application built with **Python** and **PyQt5** for quick monit
   The application was primarily developed and tested on Windows.  
   Full compatibility across Linux distributions still needs to be verified and ensured.
 
+- [ ] **Asynchronous Action Indicators**  
+  Add visual feedback (like a spinner) to buttons when executing VM actions (*Start*, *Stop*, *Reboot*) to improve the user experience.
+  
+- [ ] **Folders Organization**  
+  Add folders to place servers within them, which will make organization easier
+
+- [ ] **Configuration Screen**  
+  On the settings screen, options will be added to define whether Spice will open in full screen and whether auto resize will start checked or not.
+
 ---
 
  🟢 COMPLETED
@@ -25,13 +34,6 @@ A native desktop application built with **Python** and **PyQt5** for quick monit
 
 - [x] **Footer Layout Improvement**  
   Implemented a two-line footer with a horizontal separator and centered copyright.
-
----
-
- ⬜ IDEA
-- [ ] **Asynchronous Action Indicators**  
-  Add visual feedback (like a spinner) to buttons when executing VM actions (*Start*, *Stop*, *Reboot*) to improve the user experience.
-
 
 
 ## 🚀 Features
