@@ -47,8 +47,8 @@ A native desktop application built with **Python** and **PyQt5** for quick monit
 * **Quick Actions:**
     * **Start/Shutdown:** Power on and shut down the VM.
     * **Restart:** Reboots the VM.
-    * **Connect to SPICE:** Initiates the SPICE remote connection for the VM console.
-    * **Connect to VNC:** Initiates the VNC remote connection for the VM console.
+    * **SPICE:** Initiates the SPICE remote connection for the VM console.
+    * **VNC:** Initiates the VNC remote connection for the VM console.
 
 ## 🛠️ Installation and Requirements
 

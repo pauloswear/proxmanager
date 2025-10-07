@@ -1,14 +1,15 @@
-# widgets.py
+# widgets.py - Versão otimizada
 
 from typing import Dict, Any
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton
 )
 from PyQt5.QtCore import (
-    Qt, pyqtSignal, QSize, QThreadPool
+    Qt, pyqtSignal, QSize, QThreadPool, QTimer
 )
-from api import ProxmoxController
-# Assumindo que ViewerWorker está definido em utils.utilities
+# A importação relativa do ProxmoxController garante o acesso à API
+from api import ProxmoxController 
+# Assumindo que ViewerWorker está em utils.utilities
 from utils.utilities import ViewerWorker 
 
 
@@ -19,36 +20,34 @@ class VMWidget(QWidget):
     def __init__(self, vm_data: Dict[str, Any], controller: ProxmoxController):
         super().__init__()
         self.controller = controller
-        # Usa a instância global do pool de threads
+        # Usamos o pool de threads global para abrir o Viewer (SPICE/VNC)
         self.threadpool = QThreadPool.globalInstance() 
         
-        # ⭐️ Dados iniciais - Serão atualizados pelo update_data
         self.vm_data = vm_data
-        self.vmid = vm_data['vmid']
-        self.name = vm_data['name']
+        self.vmid = vm_data.get('vmid', -1)
+        self.name = vm_data.get('name', 'VM Desconhecida')
+        self.status = vm_data.get('status', 'unknown')
         
         # LABELS DE MÉTRICAS
-        self.status_label = QLabel() # ⭐️ Adicionado self para status_label
+        self.status_label = QLabel() 
         self.cpu_usage_label = QLabel()
         self.mem_usage_label = QLabel()
         
         self.setup_ui()
-        
-        # ⭐️ Chama update_data para popular a UI com os dados iniciais
         self.update_data(vm_data) 
 
-    # ⭐️ NOVO MÉTODO OBRIGATÓRIO PARA ATUALIZAÇÃO ASSÍNCRONA
+
     def update_data(self, new_vm_data: Dict[str, Any]):
         """
-        Atualiza os dados internos do widget e redesenha a exibição
-        com base no novo status recebido da MainWindow (thread principal).
+        Atualiza os dados internos do widget usando os dados PRÉ-BUSCADOS
+        pela thread de background da MainWindow. (Seguro para Thread Principal).
         """
-        # 1. Atualiza o dicionário de dados
+        # 1. Atualiza o dicionário de dados (MANTIDO)
         self.vm_data = new_vm_data
-        self.status = new_vm_data.get('status', 'unknown')
         self.vmid = new_vm_data.get('vmid', self.vmid)
         self.name = new_vm_data.get('name', self.name)
-
+        self.status = new_vm_data.get('status', self.status) # Novo status
+        
         # 2. Atualiza os componentes da UI
         self.update_metrics_display()
         self.update_status_display()
@@ -67,31 +66,21 @@ class VMWidget(QWidget):
         # 1. Indicador de Status (Gráfico)
         status_indicator = QLabel()
         status_indicator.setFixedSize(QSize(10, 10)) 
-        self.status_indicator = status_indicator # ⭐️ Guarda a referência
+        self.status_indicator = status_indicator 
         main_layout.addWidget(status_indicator, alignment=Qt.AlignTop)
 
-        # 2. Informações da VM (Nome, Status, CPU e RAM)
+        # 2. Informações da VM 
         info_widget = QWidget()
         info_layout = QVBoxLayout(info_widget)
         info_layout.setContentsMargins(0, 0, 0, 0)
         info_layout.setSpacing(1) 
         
-        # Linha 1: Nome e ID
-        # ⭐️ Usando o nome e ID atuais (self.name, self.vmid)
         self.name_id_label = QLabel(f"<b>{self.name}</b> <span style='color: #888888; font-size: 8pt;'>(ID: {self.vmid})</span>")
         self.name_id_label.setStyleSheet("color: white; font-size: 14pt;")
         info_layout.addWidget(self.name_id_label)
         
-        # Linha 2: Status (status_label já existe, só precisa ser self.status_label)
-        # O self.status_label foi definido no __init__ e será populado em update_status_display
         info_layout.addWidget(self.status_label) 
-        
-        # Linha 3: Uso de CPU
-        self.cpu_usage_label.setStyleSheet("color: #00A3CC; font-size: 9pt;")
         info_layout.addWidget(self.cpu_usage_label)
-        
-        # Linha 4: Uso de Memória (RAM)
-        self.mem_usage_label.setStyleSheet("color: #FFC107; font-size: 9pt;")
         info_layout.addWidget(self.mem_usage_label)
         
         main_layout.addWidget(info_widget, 4)
@@ -99,18 +88,23 @@ class VMWidget(QWidget):
         # 3. Botões de Ação
         action_layout = QHBoxLayout()
         action_layout.setSpacing(8) 
+        
         self.connect_btn = QPushButton()
         self.connect_btn.clicked.connect(self.on_connect_start_clicked)
         action_layout.addWidget(self.connect_btn, 2) 
+        
         self.vnc_btn = QPushButton("VNC")
         self.vnc_btn.clicked.connect(self.on_vnc_clicked)
         action_layout.addWidget(self.vnc_btn, 1)
+        
         self.reboot_btn = QPushButton("Restart")
         self.reboot_btn.clicked.connect(self.on_reboot_clicked)
         action_layout.addWidget(self.reboot_btn, 1)
+        
         self.stop_btn = QPushButton("Shutdown")
         self.stop_btn.clicked.connect(self.on_stop_clicked)
         action_layout.addWidget(self.stop_btn, 1)
+        
         main_layout.addLayout(action_layout, 6) 
 
         button_style_base = """
@@ -123,10 +117,10 @@ class VMWidget(QWidget):
         self.reboot_btn.setStyleSheet(button_style_base.replace("#383838", "#505030") + "color: #FFC107; border: 1px solid #FFC107;")
 
 
-    # --- Métodos de Atualização de UI (usam apenas self.vm_data) ---
+    # --- Métodos de Atualização de UI (Sem chamadas de API) ---
 
     def update_metrics_display(self):
-        """ Atualiza os rótulos de CPU e RAM usando self.vm_data atualizado. """
+        """ Usa APENAS self.vm_data que já está atualizado. """
         
         data_source = self.vm_data
         vm_type = data_source.get('type', 'qemu')
@@ -135,6 +129,7 @@ class VMWidget(QWidget):
         cpu_usage_percent = data_source.get('cpu', 0.0) * 100
         cpu_cores_total = data_source.get('maxcpu', 1)
         cpu_text = f"CPU: {cpu_usage_percent:.1f}% de {cpu_cores_total} Cores"
+        self.cpu_usage_label.setStyleSheet("color: #00A3CC; font-size: 9pt;")
         self.cpu_usage_label.setText(cpu_text)
         
         # --- Uso de Memória (RAM) ---
@@ -148,6 +143,7 @@ class VMWidget(QWidget):
         else:
             mem_text = "RAM: N/A"
 
+        self.mem_usage_label.setStyleSheet("color: #FFC107; font-size: 9pt;")
         self.mem_usage_label.setText(mem_text)
 
     def update_status_display(self):
@@ -156,21 +152,17 @@ class VMWidget(QWidget):
         
         if status == 'running':
             color = "#28A745"
-            status_text = f"Status: <b>{status.upper()}</b>"
         elif status == 'stopped':
             color = "#DC3545"
-            status_text = f"Status: <b>{status.upper()}</b>"
         elif status == 'suspended':
             color = "#FFC107"
-            status_text = f"Status: <b>{status.upper()}</b>"
         else:
             color = "#6C757D"
-            status_text = f"Status: <b>{status.upper()}</b>" # Inclui 'unknown'
+        
+        status_text = f"Status: <b>{status.upper()}</b>"
 
         self.status_label.setText(status_text)
         self.status_label.setStyleSheet(f"color: {color}; font-size: 9pt;")
-        
-        # Atualiza o indicador gráfico
         self.status_indicator.setStyleSheet(f"QLabel {{ background-color: {color}; border-radius: 5px; }}")
 
 
@@ -180,7 +172,7 @@ class VMWidget(QWidget):
         
         # Botão principal (Connect/Start)
         if is_running:
-            self.connect_btn.setText("Connect to SPICE")
+            self.connect_btn.setText("SPICE")
             color = "#00A3CC"
             hover_color = "#00BFFF"
             pressed_color = "#007090"
@@ -208,9 +200,10 @@ class VMWidget(QWidget):
         
         self.stop_btn.setVisible(is_running)
         self.reboot_btn.setVisible(is_running)
-        self.vnc_btn.setHidden(True) # Mantido como hidden
+        # Manter VNC escondido se não for usado ativamente
+        self.vnc_btn.setHidden(True) 
 
-    # --- Métodos de Clique (Permanecem os mesmos) ---
+    # --- Métodos de Clique (Ações) ---
 
     def on_vnc_clicked(self):
         worker = ViewerWorker(self.controller, self.vmid, protocol='vnc')
@@ -218,20 +211,20 @@ class VMWidget(QWidget):
 
     def on_connect_start_clicked(self):
         if self.status == 'running':
+            # Abre o cliente SPICE/Viewer em uma nova thread
             worker = ViewerWorker(self.controller, self.vmid, protocol='spice')
             self.threadpool.start(worker)
             
         else:
-            # Assíncrono: Ação de START deve emitir o sinal para forçar a atualização
+            # Ação de controle síncrona
             if self.controller.api_client.start_vm(self.vmid):
-                self.action_performed.emit()
+                # Dispara um sinal para forçar a MainWindow a atualizar o dashboard
+                self.action_performed.emit() 
 
     def on_stop_clicked(self):
-        # Assíncrono: Ação de STOP deve emitir o sinal para forçar a atualização
         if self.controller.api_client.stop_vm(self.vmid):
             self.action_performed.emit()
 
     def on_reboot_clicked(self):
-        # Assíncrono: Ação de REBOOT deve emitir o sinal para forçar a atualização
         if self.controller.api_client.reboot_vm(self.vmid):
             self.action_performed.emit()

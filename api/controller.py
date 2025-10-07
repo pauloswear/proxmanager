@@ -4,7 +4,7 @@ import os
 import tempfile
 import subprocess
 from time import sleep
-from typing import Union, Tuple, Any, Dict, List
+from typing import Union, Tuple, Any, Dict, List, Optional
 from .api_client import ProxmoxAPIClient
 from .spice_viewer import ViewerConfigGenerator
 
@@ -16,22 +16,52 @@ class ProxmoxController:
         self.config_generator = config_generator
 
 
-    def update_dashboard(self) -> Tuple[Dict[str, Any] | None, List[Dict[str, Any]] | None]:
+    def update_dashboard(self) -> Tuple[Optional[Dict[str, Any]], Optional[List[Dict[str, Any]]]]:
         """
-        Executa todas as chamadas de API necessárias para a atualização completa do dashboard.
-        Este método é chamado pela thread de background.
+        Coleta dados do Node e de todas as VMs/Containers, buscando métricas
+        precisas de memória para cada VM.
+        (Executado na thread de background)
         """
         
-        # 1. Obter Status do Node (CPU, RAM, Load)
-        # Assumindo que você tem este método implementado no seu ProxmoxAPIClient
-        node_status = self.api_client.get_node_status()
+        node_status = None
+        vms_list = None
+        updated_vms_list = []
+        
+        try:
+            # 1. Obter Status do Node (CPU, RAM, Uptime)
+            node_status = self.api_client.get_node_status()
 
-        # 2. Obter Lista de VMs/Containers
-        # Assumindo que você tem este método implementado no seu ProxmoxAPIClient
-        vms_list = self.api_client.get_vms_list()
-        
-        # O retorno é uma tupla contendo os dois resultados.
-        return node_status, vms_list
+            # 2. Obter Lista de VMs/Containers (Dados básicos)
+            vms_list = self.api_client.get_vms_list()
+            
+            # 3. Iterar e enriquecer os dados com a chamada /status/current
+            if vms_list:
+                for vm in vms_list:
+                    vmid = vm.get('vmid')
+                    vm_type = vm.get('type')
+                    
+                    if vmid is None or vm_type is None:
+                        continue 
+                        
+                    # Busca os dados mais detalhados de RAM/CPU no endpoint /status/current
+                    # ⭐️ ESTA É A CHAMADA CHAVE QUE VOCÊ QUER USAR
+                    detailed_status = self.api_client.get_vm_current_status(vmid, vm_type)
+                    
+                    if detailed_status:
+                        # Substitui as métricas básicas (mem/maxmem/cpu) pelas mais precisas
+                        # Isso garante que o VMWidget use a fonte correta
+                        vm.update(detailed_status)
+                        
+                    updated_vms_list.append(vm)
+
+        except Exception as e:
+            # Em caso de erro de API, permite que a thread_error da MainWindow lide com isso.
+            raise e
+            
+        # Retorna os dados do Node e a lista de VMs enriquecida
+        return node_status, updated_vms_list
+
+
 
     def _get_remote_viewer_path(self):
         """ Obtém o caminho para o executável do visualizador remoto (remote-viewer) """

@@ -32,16 +32,47 @@ class ProxmoxAPIClient:
             # Se houver qualquer falha (rede, SSL, auth), levante a exceção.
             raise Exception(f"Falha de autenticação ou conexão: {e}") 
 
+
     def get_vms_list(self) -> List[Dict[str, Any]]:
-        """ Obtém a lista de todas as VMs em todos os nodes """
-        vms = []
+        """ 
+        Obtém a lista de todas as VMs e Containers (LXC/QEMU) 
+        e anexa a chave 'type' a cada item. 
+        Endpoint: /cluster/resources?type=vm
+        """
+        all_vms = []
         try:
-            for node in self.proxmox.nodes.get():
-                # Endpoint: /nodes/{node}/qemu
-                vms.extend(self.proxmox.nodes(node["node"]).qemu.get())
-            return vms
+            # Busca todos os recursos de cluster, filtrando por tipo 'vm' 
+            # (que inclui tanto qemu quanto lxc)
+            resources = self.proxmox.cluster.resources.get(type='vm')
+            
+            for resource in resources:
+                # O resource no Proxmoxer já indica o tipo no campo 'type' (e.g., 'qemu', 'lxc')
+                
+                # Exemplo: id: "qemu/100", type: "qemu"
+                
+                # Filtramos apenas os tipos que nos interessam (qemu/lxc)
+                if resource.get('type') in ['qemu', 'lxc']:
+                    
+                    # Garantimos que 'type' esteja na raiz do dicionário para facilitar o Controller
+                    vm_data = resource.copy()
+                    vm_data['type'] = resource['type'] 
+                    
+                    # Renomeia 'id' para 'vmid' para padronizar com as outras chamadas
+                    # vm_data['vmid'] = int(resource['vmid']) # resource['vmid'] já deve ser o ID
+                    
+                    # O campo 'id' vem como "qemu/100" ou "lxc/101". O vmid é a parte numérica.
+                    # No endpoint de resources, a chave é 'vmid'
+                    # Mas se você for testar com o endpoint antigo (qemu.get()), a chave é 'vmid'.
+                    # Vamos garantir o vmid como inteiro para usar nas chamadas
+                    vm_data['vmid'] = int(vm_data['vmid'])
+                    
+                    all_vms.append(vm_data)
+                    
+            return all_vms
         except Exception as e:
-            print(f"Erro ao obter lista de VMs: {e}")
+            # Usando DEBUG_SIGNAL se você já implementou a janela de debug
+            # DEBUG_SIGNAL.message.emit(f"Erro ao obter lista de VMs/LXC: {e}")
+            print(f"Erro ao obter lista de VMs/LXC: {e}")
             return []
 
     def get_node_status(self) -> Dict[str, Any] | None:
