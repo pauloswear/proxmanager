@@ -2,7 +2,7 @@ import datetime
 from typing import Dict, Any
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
-    QScrollArea, QDesktopWidget
+    QScrollArea, QDesktopWidget, QPushButton
 )
 from PyQt5.QtCore import (
     Qt, QTimer, QSize, QSettings
@@ -45,7 +45,7 @@ class MainWindow(QMainWindow):
         self.timer = QTimer(self)
         # O timer chama o método unificado de atualização
         self.timer.timeout.connect(self.refresh_dashboard) 
-        self.timer.start(1000) 
+        self.timer.start(2500) 
 
     # --- Setup Methods ---
 
@@ -70,14 +70,20 @@ class MainWindow(QMainWindow):
         self.main_layout.addWidget(self.scroll_area)
 
 
+
     def setup_footer(self):
-        """ Configura o rodapé em duas linhas com separador e copyright centralizado. """
+        """ Configura o rodapé em três linhas: 
+            1. Status de VMs e Métricas do Node.
+            2. Controles do Node (Restart/Shutdown).
+            3. Copyright (Centralizado).
+        """
         
         # 1. Widget principal do Rodapé (usará QVBoxLayout para empilhar)
         footer_container = QWidget()
         footer_v_layout = QVBoxLayout(footer_container)
+        # Margens e espaçamento entre linhas
         footer_v_layout.setContentsMargins(10, 5, 10, 5) 
-        footer_v_layout.setSpacing(5) # Espaço entre as linhas
+        footer_v_layout.setSpacing(5) 
 
         footer_style = "font-weight: bold; font-size: 9pt; margin-right: 15px;"
 
@@ -86,7 +92,7 @@ class MainWindow(QMainWindow):
         status_metrics_layout = QHBoxLayout(status_metrics_widget)
         status_metrics_layout.setContentsMargins(0, 0, 0, 0)
         
-        # 1.1. Rótulos para o status da VM (Online/Offline)
+        # Rótulos para o status da VM (Online/Offline)
         self.online_label = QLabel()
         self.online_label.setStyleSheet("color: #28A745; " + footer_style)
         self.offline_label = QLabel()
@@ -102,7 +108,7 @@ class MainWindow(QMainWindow):
         status_metrics_layout.addWidget(separator_status_label)
         status_metrics_layout.addSpacing(15)
 
-        # 1.2. Rótulos para as Métricas do Node
+        # Rótulos para as Métricas do Node
         self.cpu_label = QLabel("CPU: N/A")
         self.cpu_label.setStyleSheet("color: #00A3CC; " + footer_style)
         self.mem_label = QLabel("RAM: N/A")
@@ -117,43 +123,74 @@ class MainWindow(QMainWindow):
         status_metrics_layout.addWidget(self.load_label)
         status_metrics_layout.addWidget(self.uptime_label)
 
-        # Empurra métricas para a esquerda
         status_metrics_layout.addStretch(1) 
         footer_v_layout.addWidget(status_metrics_widget)
 
-        # --- SEPARADOR HORIZONTAL (Traço) ---
-        # Usamos um QLabel que imita a funcionalidade de um <hr>
-        separator_line = QLabel()
-        separator_line.setFixedHeight(1)
-        separator_line.setStyleSheet("background-color: #333333; margin-top: 5px; margin-bottom: 5px;")
-        footer_v_layout.addWidget(separator_line)
+        # --- SEPARADOR HORIZONTAL 1 (Traço) ---
+        separator_line_1 = QLabel()
+        separator_line_1.setFixedHeight(1)
+        separator_line_1.setStyleSheet("background-color: #333333; margin-top: 5px; margin-bottom: 5px;")
+        footer_v_layout.addWidget(separator_line_1)
+        
+        
+        # ⭐️ --- LINHA 2: CONTROLES DO NODE (Restart/Shutdown) ---
+        node_controls_widget = QWidget()
+        node_controls_layout = QHBoxLayout(node_controls_widget)
+        node_controls_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # Empurra controles para a direita
+        node_controls_layout.addStretch(1) 
+        
+        # Botão de Restart
+        self.node_restart_btn = QPushButton("♻️ RESTART NODE")
+        self.node_restart_btn.setStyleSheet("""
+            QPushButton { height: 25px; border-radius: 4px; font-size: 8pt; font-weight: bold; background-color: #505030; color: #FFC107; }
+            QPushButton:hover { background-color: #606040; }
+        """)
+        self.node_restart_btn.setFixedSize(120, 25)
+        self.node_restart_btn.clicked.connect(self.on_node_restart_clicked)
+        node_controls_layout.addWidget(self.node_restart_btn)
+
+        # Botão de Shutdown
+        self.node_shutdown_btn = QPushButton("🛑 SHUTDOWN NODE")
+        self.node_shutdown_btn.setStyleSheet("""
+            QPushButton { height: 25px; border-radius: 4px; font-size: 8pt; font-weight: bold; background-color: #503030; color: #DC3545; margin-left: 10px; }
+            QPushButton:hover { background-color: #604040; }
+        """)
+        self.node_shutdown_btn.setFixedSize(130, 25)
+        self.node_shutdown_btn.clicked.connect(self.on_node_shutdown_clicked)
+        node_controls_layout.addWidget(self.node_shutdown_btn)
+        
+        footer_v_layout.addWidget(node_controls_widget)
 
 
-        # --- LINHA 2: Copyright (Centralizado) ---
+        # --- SEPARADOR HORIZONTAL 2 (Traço) ---
+        separator_line_2 = QLabel()
+        separator_line_2.setFixedHeight(1)
+        separator_line_2.setStyleSheet("background-color: #333333; margin-top: 5px; margin-bottom: 5px;")
+        footer_v_layout.addWidget(separator_line_2)
+
+
+        # --- LINHA 3: Copyright (Centralizado) ---
         copyright_widget = QWidget()
         copyright_h_layout = QHBoxLayout(copyright_widget)
         copyright_h_layout.setContentsMargins(0, 0, 0, 0)
         
-        # ⭐️ Adiciona stretch antes para centralizar
         copyright_h_layout.addStretch(1) 
 
         # Rótulo de Copyright
         current_year = datetime.datetime.now().year
-        copyright_text = f"<span>© {current_year} - <a href='https://github.com/pauloswear' style='color: #00A3CC; text-decoration: none;'>Paulo Henrique 🌟</a></span>"
+        copyright_text = f"<span>© {current_year} - <a href='https://github.com/pauloswear' style='color: #00A3CC; text-decoration: none;'>Paulo Henrique</a></span>"
         
         copyright_label = QLabel(copyright_text)
         copyright_label.setStyleSheet("color: #888888; font-size: 8pt;")
         copyright_label.setOpenExternalLinks(True)
         
         copyright_h_layout.addWidget(copyright_label)
-        
-        # ⭐️ Adiciona stretch depois para centralizar
         copyright_h_layout.addStretch(1) 
         
-        # Adiciona o widget de copyright ao layout vertical principal
         footer_v_layout.addWidget(copyright_widget)
 
-        # Adiciona o container do rodapé (com as duas linhas empilhadas) ao layout principal da janela
         self.main_layout.addWidget(footer_container)
 
 
@@ -186,13 +223,43 @@ class MainWindow(QMainWindow):
         qr.moveCenter(cp)
         self.move(qr.topLeft())
 
+    # ⭐️ --- MÉTODOS DE CONTROLE DO NODE ---
+
+    def on_node_restart_clicked(self):
+        """ Executa a ação de Restart do Node através do Controller. """
+        # ⚠️ IMPORTANTE: Você deve implementar um Pop-up de CONFIRMAÇÃO aqui!
+        # Ações de Restart/Shutdown de Node são perigosas.
+
+        # Exemplo de como chamar o Controller (assumindo a função existe)
+        success = self.controller.api_client.restart_node()
+        
+        if success:
+            print("Restart do Node iniciado com sucesso.")
+            # O Node ficará inacessível, então não faz sentido chamar refresh_dashboard()
+            # Uma mensagem de aviso para o usuário é o ideal.
+        else:
+            print("ERRO ao tentar reiniciar o Node.")
+            
+    def on_node_shutdown_clicked(self):
+        """ Executa a ação de Shutdown do Node através do Controller. """
+        # ⚠️ IMPORTANTE: Você deve implementar um Pop-up de CONFIRMAÇÃO aqui!
+        
+        # Exemplo de como chamar o Controller (assumindo a função existe)
+        success = self.controller.api_client.shutdown_node()
+        
+        if success:
+            print("Shutdown do Node iniciado com sucesso.")
+            # O Node ficará inacessível
+        else:
+            print("ERRO ao tentar desligar o Node.")
+
+
     # --- Dashboard Methods ---
 
     def refresh_dashboard(self):
         """ Método unificado chamado pelo timer para atualizar todas as métricas e a lista de VMs. """
         self.load_vms()
         self.update_node_metrics()
-
 
 
     def update_node_metrics(self):

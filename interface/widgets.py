@@ -104,37 +104,51 @@ class VMWidget(QWidget):
 
 
     # ⭐️ NOVO MÉTODO PARA ATUALIZAR AS MÉTRICAS DE CPU/RAM 
-    def update_metrics_display(self):
-        """ Atualiza os rótulos de CPU e RAM com a formatação solicitada (Uso % do Total). """
 
-        # Data está na variável self.vm_data
+# widgets.py (Dentro da classe VMWidget, no método update_metrics_display)
+
+    def update_metrics_display(self):
+        """ Atualiza os rótulos de CPU e RAM com a formatação solicitada (Uso MB/GB). """
+        
+        # O self.vm_data é o dicionário de status inicial (incompleto)
+        
+        # --- 1. Busca os Dados de Status ATUAIS (Corrigidos) ---
+        vm_type = self.vm_data.get('type', 'qemu') # Assume qemu se não encontrar
+        
+        # Chamamos a API para obter o status/current. Se a VM estiver parada,
+        # self.vm_data.get('mem') será 0 e o status_data pode ser None/incompleto.
+        status_data = self.controller.api_client.get_vm_current_status(self.vmid, vm_type)
+        
+        # Usa os dados do status atual, se disponíveis, ou faz fallback para os dados iniciais
+        data_source = status_data if status_data else self.vm_data
         
         # --- Uso de CPU (Mantido) ---
-        cpu_usage_percent = self.vm_data.get('cpu', 0.0) * 100
-        cpu_cores_total = self.vm_data.get('cpus', 1)
-        
+        cpu_usage_percent = data_source.get('cpu', 0.0) * 100
+        cpu_cores_total = data_source.get('maxcpu', 1)
         cpu_text = f"CPU: {cpu_usage_percent:.1f}% de {cpu_cores_total} Cores"
         self.cpu_usage_label.setText(cpu_text)
         
-        # --- Uso de Memória (RAM) - AGORA EM MB USADOS ---
-        mem_used_bytes = self.vm_data.get('mem', 0)
-        mem_total_bytes = self.vm_data.get('maxmem', 0)
+        # --- Uso de Memória (RAM) - Agora com dados de 'status/current' ---
+        
+        # 'mem' é o campo de memória USADA em bytes (preciso para LXC/QEMU status/current)
+        mem_used_bytes = data_source.get('mem', 0) 
+        mem_total_bytes = data_source.get('maxmem', 0)
         
         if mem_total_bytes > 0:
             
-            # ⭐️ CONVERTE O USO DE BYTES PARA MEGABYTES (1024^2)
+            # Converte o USO de bytes para MEGABYTES (1024^2)
             mem_used_mb = mem_used_bytes / (1024**2)
             
-            # CONVERTE O TOTAL DE BYTES PARA GIGABYTES (Para o contexto do total alocado)
+            # Converte o TOTAL de bytes para GIGABYTES (1024^3)
             mem_total_gb = mem_total_bytes / (1024**3)
             
-            # Formato: RAM: 768.5 MB de 3.0 GB
-            mem_text = f"RAM: {mem_used_mb:.1f} MB de {mem_total_gb:.1f} GB"
+            # Adiciona o tipo de VM para contexto
+            mem_text = f"RAM: {mem_used_mb:.1f} MB de {mem_total_gb:.1f} GB ({vm_type.upper()})"
         else:
             mem_text = "RAM: N/A"
 
         self.mem_usage_label.setText(mem_text)
-        
+
     # Os métodos update_buttons, on_vnc_clicked, etc. continuam os mesmos.
 
     def update_buttons(self):

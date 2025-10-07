@@ -1,5 +1,3 @@
-# api_client.py
-
 from proxmoxer import ProxmoxAPI
 from typing import Union, Dict, Any, List
 
@@ -28,7 +26,6 @@ class ProxmoxAPIClient:
                 verify_ssl=False
             )
             # Tente uma chamada simples (e necessária) para validar a conexão/autenticação
-            # Se a autenticação estiver errada, a proxmoxer levanta uma exceção aqui.
             api.nodes.get() 
             return api
         except Exception as e:
@@ -39,7 +36,6 @@ class ProxmoxAPIClient:
         """ Obtém a lista de todas as VMs em todos os nodes """
         vms = []
         try:
-            # Note: A proxmoxer lida com o endpoint /nodes.
             for node in self.proxmox.nodes.get():
                 # Endpoint: /nodes/{node}/qemu
                 vms.extend(self.proxmox.nodes(node["node"]).qemu.get())
@@ -48,7 +44,6 @@ class ProxmoxAPIClient:
             print(f"Erro ao obter lista de VMs: {e}")
             return []
 
-    # ⭐️ NOVO MÉTODO: OBTÉM O STATUS DO NODE ⭐️
     def get_node_status(self) -> Dict[str, Any] | None:
         """
         Busca o status de performance do node (CPU, RAM, disco, uptime).
@@ -56,7 +51,6 @@ class ProxmoxAPIClient:
         """
         try:
             # Usando proxmoxer: self.proxmox.nodes('{node}').status.get()
-            # Retorna as principais métricas do *node* logado
             status_data = self.proxmox.nodes(self.node).status.get()
             return status_data
         except Exception as e:
@@ -71,7 +65,35 @@ class ProxmoxAPIClient:
         """ Obtém a configuração VNC temporária para a VM """
         return self.proxmox.nodes(self.node).qemu(str(vmid)).vncproxy.post()
 
-    # --- FUNÇÕES DE AÇÃO ---
+    def get_vm_current_status(self, vmid: Union[str, int], vm_type: str) -> Dict[str, Any] | None:
+        """
+        Busca o status atual ('status/current') da VM (QEMU) ou Container (LXC).
+        Este endpoint contém as métricas de memória e CPU mais precisas.
+        Endpoint: /nodes/{node}/(lxc|qemu)/{vmid}/status/current
+        """
+        # Garante que o tipo é 'lxc' ou 'qemu'
+        if vm_type not in ['lxc', 'qemu']:
+            print(f"Tipo de VM desconhecido: {vm_type}")
+            return None
+            
+        try:
+            # Seleciona o endpoint correto (lxc ou qemu)
+            if vm_type == 'lxc':
+                # Chamada para container LXC (Endpoint: /nodes/{node}/lxc/{vmid}/status/current)
+                status_data = self.proxmox.nodes(self.node).lxc(str(vmid)).status.current.get()
+            else:
+                # Chamada para VM QEMU (Endpoint: /nodes/{node}/qemu/{vmid}/status/current)
+                status_data = self.proxmox.nodes(self.node).qemu(str(vmid)).status.current.get()
+                
+            # O status retornado tem as chaves 'mem' (usado) e 'maxmem' (total)
+            return status_data
+            
+        except Exception as e:
+            # Em caso de falha (VMID inexistente, VM desligada, etc.)
+            print(f"Erro ao buscar status atual da {vm_type} {vmid}: {e}")
+            return None
+
+    # --- FUNÇÕES DE AÇÃO DA VM ---
     def stop_vm(self, vmid: Union[str, int]):
         """ Desliga (stop) a VM """
         try:
@@ -97,4 +119,26 @@ class ProxmoxAPIClient:
             return True
         except Exception as e:
             print(f"Erro ao reiniciar VM {vmid}: {e}")
+            return False
+            
+    # ⭐️ --- NOVOS MÉTODOS DE CONTROLE DO NODE --- ⭐️
+
+    def restart_node(self):
+        """ Reinicia o Node do Proxmox. Endpoint: /nodes/{node}/status/reboot """
+        try:
+            # A chamada .reboot.post() envia o comando para reiniciar o Node
+            self.proxmox.nodes(self.node).status.reboot.post()
+            return True
+        except Exception as e:
+            print(f"Erro ao tentar reiniciar o Node '{self.node}': {e}")
+            return False
+
+    def shutdown_node(self):
+        """ Desliga o Node do Proxmox. Endpoint: /nodes/{node}/status/shutdown """
+        try:
+            # A chamada .shutdown.post() envia o comando para desligar o Node
+            self.proxmox.nodes(self.node).status.shutdown.post()
+            return True
+        except Exception as e:
+            print(f"Erro ao tentar desligar o Node '{self.node}': {e}")
             return False
