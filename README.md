@@ -3,6 +3,11 @@
 A native desktop application built with **Python** and **PyQt5** for quick monitoring and management of virtual machines (VMs) hosted on a Proxmox node. It's designed for users who need an instant view of server metrics and operational control over their VMs without having to access the full web interface.
 
 
+# The dashboard interface (Check more screenshots on screenshots folder)
+
+![Dashboard](./screenshots/dashboard.png)
+
+
 ## 📝 TO-DO List and Future Improvements
 
  🟡 PENDING
