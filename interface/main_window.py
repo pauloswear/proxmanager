@@ -72,16 +72,15 @@ class MainWindow(QMainWindow):
 
 
     def setup_footer(self):
-        """ Configura o rodapé em três linhas: 
-            1. Status de VMs e Métricas do Node.
-            2. Controles do Node (Restart/Shutdown).
-            3. Copyright (Centralizado).
+        """ Configura o rodapé em duas linhas: 
+            1. Status de VMs e Métricas do Node (Com stretch à direita).
+            2. Controles do Node (Restart/Shutdown - Esquerda) e Copyright (Direita).
         """
         
         # 1. Widget principal do Rodapé (usará QVBoxLayout para empilhar)
         footer_container = QWidget()
         footer_v_layout = QVBoxLayout(footer_container)
-        # Margens e espaçamento entre linhas
+        # Margens e espaçamento
         footer_v_layout.setContentsMargins(10, 5, 10, 5) 
         footer_v_layout.setSpacing(5) 
 
@@ -123,25 +122,22 @@ class MainWindow(QMainWindow):
         status_metrics_layout.addWidget(self.load_label)
         status_metrics_layout.addWidget(self.uptime_label)
 
-        status_metrics_layout.addStretch(1) 
+        status_metrics_layout.addStretch(1) # Empurra tudo para a esquerda
         footer_v_layout.addWidget(status_metrics_widget)
 
-        # --- SEPARADOR HORIZONTAL 1 (Traço) ---
-        separator_line_1 = QLabel()
-        separator_line_1.setFixedHeight(1)
-        separator_line_1.setStyleSheet("background-color: #333333; margin-top: 5px; margin-bottom: 5px;")
-        footer_v_layout.addWidget(separator_line_1)
+        # --- SEPARADOR HORIZONTAL (Traço) ---
+        separator_line = QLabel()
+        separator_line.setFixedHeight(1)
+        separator_line.setStyleSheet("background-color: #333333; margin-top: 5px; margin-bottom: 5px;")
+        footer_v_layout.addWidget(separator_line)
         
         
-        # ⭐️ --- LINHA 2: CONTROLES DO NODE (Restart/Shutdown) ---
-        node_controls_widget = QWidget()
-        node_controls_layout = QHBoxLayout(node_controls_widget)
-        node_controls_layout.setContentsMargins(0, 0, 0, 0)
+        # ⭐️ --- LINHA 2: CONTROLES E COPYRIGHT (Usando QHBoxLayout) ---
+        controls_copyright_widget = QWidget()
+        controls_copyright_layout = QHBoxLayout(controls_copyright_widget)
+        controls_copyright_layout.setContentsMargins(0, 0, 0, 0)
         
-        # Empurra controles para a direita
-        node_controls_layout.addStretch(1) 
-        
-        # Botão de Restart
+        # Botão de Restart (ESQUERDA)
         self.node_restart_btn = QPushButton("♻️ RESTART NODE")
         self.node_restart_btn.setStyleSheet("""
             QPushButton { height: 25px; border-radius: 4px; font-size: 8pt; font-weight: bold; background-color: #505030; color: #FFC107; }
@@ -149,9 +145,9 @@ class MainWindow(QMainWindow):
         """)
         self.node_restart_btn.setFixedSize(120, 25)
         self.node_restart_btn.clicked.connect(self.on_node_restart_clicked)
-        node_controls_layout.addWidget(self.node_restart_btn)
+        controls_copyright_layout.addWidget(self.node_restart_btn)
 
-        # Botão de Shutdown
+        # Botão de Shutdown (ESQUERDA)
         self.node_shutdown_btn = QPushButton("🛑 SHUTDOWN NODE")
         self.node_shutdown_btn.setStyleSheet("""
             QPushButton { height: 25px; border-radius: 4px; font-size: 8pt; font-weight: bold; background-color: #503030; color: #DC3545; margin-left: 10px; }
@@ -159,37 +155,24 @@ class MainWindow(QMainWindow):
         """)
         self.node_shutdown_btn.setFixedSize(130, 25)
         self.node_shutdown_btn.clicked.connect(self.on_node_shutdown_clicked)
-        node_controls_layout.addWidget(self.node_shutdown_btn)
+        controls_copyright_layout.addWidget(self.node_shutdown_btn)
         
-        footer_v_layout.addWidget(node_controls_widget)
-
-
-        # --- SEPARADOR HORIZONTAL 2 (Traço) ---
-        separator_line_2 = QLabel()
-        separator_line_2.setFixedHeight(1)
-        separator_line_2.setStyleSheet("background-color: #333333; margin-top: 5px; margin-bottom: 5px;")
-        footer_v_layout.addWidget(separator_line_2)
-
-
-        # --- LINHA 3: Copyright (Centralizado) ---
-        copyright_widget = QWidget()
-        copyright_h_layout = QHBoxLayout(copyright_widget)
-        copyright_h_layout.setContentsMargins(0, 0, 0, 0)
         
-        copyright_h_layout.addStretch(1) 
+        # ⭐️ Espaçamento flexível para empurrar o copyright para a direita
+        controls_copyright_layout.addStretch(1) 
 
-        # Rótulo de Copyright
+        # Rótulo de Copyright (DIREITA)
         current_year = datetime.datetime.now().year
+        # Usando QLabel com HTML para link externo e formatação
         copyright_text = f"<span>© {current_year} - <a href='https://github.com/pauloswear' style='color: #00A3CC; text-decoration: none;'>Paulo Henrique</a></span>"
         
         copyright_label = QLabel(copyright_text)
         copyright_label.setStyleSheet("color: #888888; font-size: 8pt;")
         copyright_label.setOpenExternalLinks(True)
         
-        copyright_h_layout.addWidget(copyright_label)
-        copyright_h_layout.addStretch(1) 
+        controls_copyright_layout.addWidget(copyright_label)
         
-        footer_v_layout.addWidget(copyright_widget)
+        footer_v_layout.addWidget(controls_copyright_widget)
 
         self.main_layout.addWidget(footer_container)
 
