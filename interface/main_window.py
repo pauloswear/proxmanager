@@ -6,7 +6,7 @@ from PyQt5.QtWidgets import (
     QLineEdit, QComboBox, QFrame, QSizePolicy
 )
 from PyQt5.QtCore import (
-    Qt, QTimer, QSize, QThreadPool, pyqtSlot, QPoint
+    Qt, QTimer, QSize, QThreadPool, pyqtSlot, QPoint, QPropertyAnimation, QRect, QEasingCurve
 )
 from PyQt5.QtGui import QFont
 # Importações relativas
@@ -63,6 +63,10 @@ class MainWindow(QMainWindow):
         self.current_search_text = ""
         self.current_status_filter = "ALL"
         self.unfiltered_vms_list = []  # Store original VM list
+        
+        # Search menu state
+        self.search_expanded = False  # Start collapsed
+        self.search_animation = None
 
         self.setup_header()
         self.setup_tree_view()
@@ -163,6 +167,35 @@ class MainWindow(QMainWindow):
         self.current_search_text = ""
         self.current_status_filter = "ALL"
         self.apply_filters()
+
+    def toggle_search_menu(self):
+        """Toggle search menu visibility with animation"""
+        if self.search_animation and self.search_animation.state() == QPropertyAnimation.Running:
+            return
+        
+        # Create animation for the entire filter container
+        self.search_animation = QPropertyAnimation(self.filter_container, b"maximumHeight")
+        self.search_animation.setDuration(300)
+        self.search_animation.setEasingCurve(QEasingCurve.OutCubic)
+        
+        if self.search_expanded:
+            # Collapse - hide entire container
+            self.search_animation.setStartValue(self.filter_container.height())
+            self.search_animation.setEndValue(0)
+            # Atualiza estilo do botão sidebar para indicar estado inativo
+            self.search_sidebar_btn.setStyleSheet(self._get_sidebar_icon_style())
+            self.search_expanded = False
+        else:
+            # Expand - show entire container
+            self.filter_container.setMaximumHeight(16777215)  # Reset max height
+            target_height = self.filter_container.sizeHint().height()
+            self.search_animation.setStartValue(0)
+            self.search_animation.setEndValue(target_height)
+            # Atualiza estilo do botão sidebar para indicar estado ativo
+            self.search_sidebar_btn.setStyleSheet(self._get_sidebar_icon_style(active=True))
+            self.search_expanded = True
+        
+        self.search_animation.start()
     
     def apply_filters(self):
         """Applies current filters to the VM list"""
@@ -315,8 +348,8 @@ class MainWindow(QMainWindow):
     def setup_filters(self):
         """Sets up the filter controls above the tree"""
         # Container for filters
-        filter_container = QFrame()
-        filter_container.setStyleSheet("""
+        self.filter_container = QFrame()
+        self.filter_container.setStyleSheet("""
             QFrame {
                 background-color: #2D2D2D;
                 border-radius: 6px;
@@ -324,8 +357,10 @@ class MainWindow(QMainWindow):
                 padding: 5px;
             }
         """)
-        filter_layout = QHBoxLayout(filter_container)
+        filter_layout = QHBoxLayout(self.filter_container)
         filter_layout.setContentsMargins(10, 8, 10, 8)
+        
+
         
         # Search field
         search_label = QLabel("🔍 Search:")
@@ -421,7 +456,10 @@ class MainWindow(QMainWindow):
         self.results_label.setStyleSheet("color: #888888; font-size: 9pt;")
         filter_layout.addWidget(self.results_label)
         
-        self.main_layout.addWidget(filter_container)
+        self.main_layout.addWidget(self.filter_container)
+        
+        # Initialize search menu as collapsed
+        self.filter_container.setMaximumHeight(0)
 
     def setup_footer(self):
         """ Configura o rodapé em duas linhas com melhor disposição. """
@@ -587,6 +625,13 @@ class MainWindow(QMainWindow):
         dashboard_btn.setEnabled(False)
         dashboard_btn.setToolTip("Dashboard")
         sidebar_layout.addWidget(dashboard_btn)
+        
+        # Search toggle button (starts inactive since menu is collapsed by default)
+        self.search_sidebar_btn = QPushButton("🔍")
+        self.search_sidebar_btn.setStyleSheet(self._get_sidebar_icon_style())
+        self.search_sidebar_btn.setToolTip("Toggle Search Menu")
+        self.search_sidebar_btn.clicked.connect(self.toggle_search_menu)
+        sidebar_layout.addWidget(self.search_sidebar_btn)
         
         # Add spacer
         sidebar_layout.addStretch()
