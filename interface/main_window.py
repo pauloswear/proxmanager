@@ -231,7 +231,7 @@ class MainWindow(QMainWindow):
     # --------------------------------------------------------------------------
 
     def setup_header(self):
-        title_label = QLabel("🚀 Gerenciamento de Servidores Virtuais")
+        title_label = QLabel("🚀 Servers")
         title_label.setFont(QFont("Arial", 18, QFont.Bold)) 
         title_label.setAlignment(Qt.AlignCenter)
         title_label.setStyleSheet("color: #00A3CC; margin-bottom: 10px; padding: 5px;") 

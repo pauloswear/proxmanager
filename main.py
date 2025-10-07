@@ -7,8 +7,8 @@ from interface import LoginWindow
 
 # Configurações globais da Aplicação
 APP_ORGANIZATION = "PyQtProxmoxApp"
-APP_NAME = "VMManager"
-ICON_PATH = "favicon.png"
+APP_NAME = "ProxManager"
+ICON_PATH = "./resources/favicon.ico"
 
 def apply_dark_theme(app: QApplication):
     """ Aplica o tema dark (Fusion) na aplicação. """

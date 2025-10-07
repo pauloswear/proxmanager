@@ -8,7 +8,9 @@ from PyQt5.QtCore import QRunnable, QThreadPool
 from api import ProxmoxController # Assume que ProxmoxController está acessível
 
 # --- CONSTANTES ---
-CONFIG_FILE = "configs.json"
+CONFIG_FILE = "./resources/configs.json"
+os.makedirs("./resources", exist_ok=True)  # Garante que o diretório exista 
+
 
 
 # Para Windows 10/11 - modo escuro na barra de título
