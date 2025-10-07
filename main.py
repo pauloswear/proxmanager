@@ -1,6 +1,9 @@
 import sys
 import os
-from PyQt5.QtWidgets import QApplication
+import atexit
+import tempfile
+import subprocess
+from PyQt5.QtWidgets import QApplication, QMessageBox
 from PyQt5.QtGui import QIcon, QColor, QPalette
 from PyQt5.QtCore import QSettings, Qt
 from interface import LoginWindow
@@ -9,6 +12,71 @@ from interface import LoginWindow
 APP_ORGANIZATION = "PyQtProxmoxApp"
 APP_NAME = "ProxManager"
 ICON_PATH = "./resources/favicon.ico"
+LOCKFILE_PATH = os.path.join(tempfile.gettempdir(), "proxmanager.lock")
+
+def create_lockfile():
+    """Cria o arquivo de lock com o PID do processo atual"""
+    try:
+        if os.path.exists(LOCKFILE_PATH):
+            # Verifica se o processo ainda está rodando
+            with open(LOCKFILE_PATH, 'r') as f:
+                old_pid = int(f.read().strip())
+            
+            # Verifica se o processo ainda existe
+            if is_process_running(old_pid):
+                return False  # Processo ainda rodando
+            else:
+                # Remove lockfile órfão
+                os.remove(LOCKFILE_PATH)
+        
+        # Cria novo lockfile
+        with open(LOCKFILE_PATH, 'w') as f:
+            f.write(str(os.getpid()))
+        
+        # Registra função para remover lockfile ao sair
+        atexit.register(remove_lockfile)
+        return True
+        
+    except Exception as e:
+        print(f"Erro ao criar lockfile: {e}")
+        return False
+
+def remove_lockfile():
+    """Remove o arquivo de lock"""
+    try:
+        if os.path.exists(LOCKFILE_PATH):
+            os.remove(LOCKFILE_PATH)
+    except Exception as e:
+        print(f"Erro ao remover lockfile: {e}")
+
+def is_process_running(pid):
+    """Verifica se um processo está rodando pelo PID"""
+    try:
+        if os.name == 'nt':  # Windows
+            import subprocess
+            result = subprocess.run(['tasklist', '/FI', f'PID eq {pid}'], 
+                                  capture_output=True, text=True)
+            return str(pid) in result.stdout
+        else:  # Unix/Linux
+            os.kill(pid, 0)
+            return True
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+def show_already_running_message():
+    """Exibe mensagem informando que a aplicação já está rodando"""
+    app = QApplication(sys.argv)
+    apply_dark_theme(app)
+    
+    msg = QMessageBox()
+    msg.setIcon(QMessageBox.Warning)
+    msg.setWindowTitle("ProxManager")
+    msg.setText("ProxManager já está em execução!")
+    msg.setInformativeText("Apenas uma instância da aplicação pode ser executada por vez.")
+    msg.setStandardButtons(QMessageBox.Ok)
+    msg.exec_()
+    
+    sys.exit(1)
 
 def apply_dark_theme(app: QApplication):
     """ Aplica o tema dark (Fusion) na aplicação. """
@@ -27,6 +95,11 @@ def apply_dark_theme(app: QApplication):
 
 def main():
     """ Ponto de entrada principal da aplicação. """
+    
+    # Verificar se já há uma instância rodando
+    if not create_lockfile():
+        show_already_running_message()
+        return
     
     # 1. Configurações de aplicação para QSettings
     QApplication.setOrganizationName(APP_ORGANIZATION) 

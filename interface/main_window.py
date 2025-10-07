@@ -31,7 +31,11 @@ class MainWindow(QMainWindow):
         
         # Load configurations
         configs = self.config_manager.load_configs()
-        self.timer_interval = configs.get('timer_interval', 300)
+        self.timer_interval = 1500  # for triggering updates
+        
+        # Track separate API requests
+        self.metrics_running = False
+        self.vms_running = False
         
         self.threadpool = QThreadPool()
 
@@ -75,6 +79,7 @@ class MainWindow(QMainWindow):
         
         self.initial_load()
         
+        # Single timer for all updates - waits for API response
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.run_update_in_thread)
         self.timer.start(self.timer_interval) 
@@ -86,50 +91,119 @@ class MainWindow(QMainWindow):
     def initial_load(self):
         """Loads the dashboard for the first time synchronously."""
         try:
-            # Aqui é síncrono para garantir que a UI não comece vazia.
-            node_data, vms_list = self.controller.update_dashboard()
-            self.update_gui_with_data(node_data, vms_list)
+            # Load metrics first (usually faster)
+            try:
+                node_data = self.controller.api_client.get_node_status()
+                if node_data:
+                    self.update_node_metrics(node_data)
+            except Exception:
+                pass  # Continue even if metrics fail
+            
+            # Load VMs list
+            try:
+                vms_list = self.get_vms_only()
+                if vms_list:
+                    self.update_vms_widgets(vms_list)
+            except Exception:
+                pass  # Continue even if VMs fail
+                
         except Exception as e:
             QMessageBox.critical(self, "Falha na Conexão Inicial", 
                                  f"Não foi possível conectar ou carregar dados do Proxmox.\n\nDetalhes: {e}", 
                                  QMessageBox.Ok)
             
     def run_update_in_thread(self):
-        """Starts dashboard update in a separate thread."""
+        """Starts separate updates for metrics and VMs - updates as they respond."""
         
-        if self.threadpool.activeThreadCount() > 0:
-             return
+        # Start metrics update if not already running
+        if not self.metrics_running:
+            self.metrics_running = True
+            metrics_worker = Worker(self.controller.api_client.get_node_status)
+            metrics_worker.signals.result.connect(self.handle_metrics_result)
+            metrics_worker.signals.error.connect(self.handle_metrics_error)
+            self.threadpool.start(metrics_worker)
         
-        # Stop Timer to avoid request overlap
-        self.timer.stop()
-             
-        worker = Worker(self.controller.update_dashboard) 
-        
-        worker.signals.result.connect(self.handle_update_result)
-        worker.signals.error.connect(self.thread_error)
-        
-        self.threadpool.start(worker)
+        # Start VMs update if not already running  
+        if not self.vms_running:
+            self.vms_running = True
+            vms_worker = Worker(self.get_vms_only)
+            vms_worker.signals.result.connect(self.handle_vms_result)
+            vms_worker.signals.error.connect(self.handle_vms_error)
+            self.threadpool.start(vms_worker)
 
     @pyqtSlot(object)
     def handle_update_result(self, result: Optional[Tuple[Dict[str, Any], List[Dict[str, Any]]]]):
-        """ Recebe o resultado da thread, atualiza a GUI e REINICIA o timer. """
+        """ Recebe o resultado da thread, atualiza a GUI e reinicia o timer. """
         
         if result and isinstance(result, tuple) and len(result) == 2:
             node_data, vms_list = result
             self.update_gui_with_data(node_data, vms_list)
 
-        # Restart Timer (cycle starts now)
-        self.timer.start(self.timer_interval) 
+        # Restart timer after response is processed
+        self.timer.start(self.timer_interval)
+
+    @pyqtSlot(object)
+    def handle_metrics_result(self, result):
+        """Handle metrics response - update immediately"""
+        if result:
+            self.update_node_metrics(result)
+        self.metrics_running = False
+
+    @pyqtSlot(tuple)
+    def handle_metrics_error(self, error):
+        """Handle metrics error"""
+        self.metrics_running = False
+
+    @pyqtSlot(object)
+    def handle_vms_result(self, result):
+        """Handle VMs response - update immediately"""
+        if result:
+            self.update_vms_widgets(result)
+        self.vms_running = False
+
+    @pyqtSlot(tuple)
+    def handle_vms_error(self, error):
+        """Handle VMs error"""
+        self.vms_running = False
+
+    def get_vms_only(self):
+        """Get only VMs list with detailed status"""
+        updated_vms_list = []
+        try:
+            # Get basic VMs list
+            vms_list = self.controller.api_client.get_vms_list()
+            
+            if vms_list:
+                for vm in vms_list:
+                    vmid = vm.get('vmid')
+                    vm_type = vm.get('type')
+                    
+                    if vmid is None or vm_type is None:
+                        continue 
+                        
+                    # Get detailed status for each VM
+                    detailed_status = self.controller.api_client.get_vm_current_status(vmid, vm_type)
+                    
+                    if detailed_status:
+                        vm.update(detailed_status)
+                        
+                    updated_vms_list.append(vm)
+                    
+            return updated_vms_list
+            
+        except Exception as e:
+            raise e
 
     @pyqtSlot(tuple)
     def thread_error(self, error: Tuple[type, BaseException, str]):
-        """ Lida com erros da API que ocorreram na thread e REINICIA o timer. """
+        """ Lida com erros da API que ocorreram na thread e reinicia o timer. """
         exctype, value, traceback_str = error
         
         QMessageBox.critical(self.centralWidget(), "Falha na Atualização (Thread)", 
                              f"Não foi possível atualizar o Proxmox.\n\nDetalhes do Erro: {value}", 
                              QMessageBox.Ok)
         
+        # Restart timer even on error
         self.timer.start(self.timer_interval)
 
     def pause_timer(self):
@@ -859,7 +933,7 @@ class MainWindow(QMainWindow):
     def show_settings(self):
         """Show settings dialog"""
         from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QGroupBox, QCheckBox, 
-                                   QDialogButtonBox, QFormLayout)
+                                   QDialogButtonBox, QFormLayout, QSpinBox, QLabel)
         
         dialog = QDialog(self)
         dialog.setWindowTitle("Configurações")
