@@ -3,7 +3,8 @@ from typing import Dict, Any, List, Optional, Tuple
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
     QScrollArea, QDesktopWidget, QPushButton, QMessageBox, 
-    QLineEdit, QComboBox, QFrame, QSizePolicy
+    QLineEdit, QComboBox, QFrame, QSizePolicy, QDialog, 
+    QDialogButtonBox, QFormLayout, QGroupBox, QCheckBox
 )
 from PyQt5.QtCore import (
     Qt, QTimer, QSize, QThreadPool, pyqtSlot, QPoint, QPropertyAnimation, QRect, QEasingCurve
@@ -664,16 +665,21 @@ class MainWindow(QMainWindow):
             
     def closeEvent(self, event):
         # Save window configuration
-        configs = self.config_manager.load_configs()
+        try:
+            configs = self.config_manager.load_configs()
+            
+            # Save only size and maximized state
+            configs['window'] = {
+                'width': self.size().width(),
+                'height': self.size().height(),
+                'maximized': self.isMaximized()
+            }
+            
+            self.config_manager.save_configs(configs)
+            print(f"Window config saved: {configs['window']}")  # Debug
+        except Exception as e:
+            print(f"Error saving window config: {e}")  # Debug
         
-        # Save only size and maximized state
-        configs['window'] = {
-            'width': self.size().width(),
-            'height': self.size().height(),
-            'maximized': self.isMaximized()
-        }
-        
-        self.config_manager.save_configs(configs)
         event.accept()
 
     def center(self): 
@@ -731,7 +737,7 @@ class MainWindow(QMainWindow):
         self.settings_btn = QPushButton("⚙️")
         self.settings_btn.setStyleSheet(self._get_sidebar_icon_style())
         self.settings_btn.clicked.connect(self.show_settings)
-        self.settings_btn.setToolTip("Configurações")
+        self.settings_btn.setToolTip("Configurations")
         sidebar_layout.addWidget(self.settings_btn)
         
         # Node Restart button
@@ -936,7 +942,7 @@ class MainWindow(QMainWindow):
                                    QDialogButtonBox, QFormLayout, QSpinBox, QLabel)
         
         dialog = QDialog(self)
-        dialog.setWindowTitle("Configurações")
+        dialog.setWindowTitle("Configurations")
         dialog.setFixedSize(350, 200)
         dialog.setStyleSheet("""
             QDialog {
@@ -1000,6 +1006,24 @@ class MainWindow(QMainWindow):
         self.kiosk_check.setChecked(configs.get('spice_kiosk', False))
         spice_layout.addRow("Kiosk mode:", self.kiosk_check)
         
+        # SmartCard checkbox
+        self.smartcard_check = QCheckBox()
+        self.smartcard_check.setChecked(configs.get('spice_smartcard', True))
+        spice_layout.addRow("SmartCard:", self.smartcard_check)
+        
+        # USB Redirect checkbox
+        self.usbredirect_check = QCheckBox()
+        self.usbredirect_check.setChecked(configs.get('spice_usbredirect', True))
+        spice_layout.addRow("USB Redirect:", self.usbredirect_check)
+        
+        # Fluidity mode combo box
+        self.fluidity_combo = QComboBox()
+        self.fluidity_combo.addItems(["balanced", "performance", "quality"])
+        current_fluidity = configs.get('spice_fluidity_mode', 'balanced')
+        self.fluidity_combo.setCurrentText(current_fluidity)
+        spice_layout.addRow("Fluidity:", self.fluidity_combo)
+        
+
         layout.addWidget(spice_group)
         
         # Buttons
@@ -1029,6 +1053,9 @@ class MainWindow(QMainWindow):
             configs['spice_fullscreen'] = self.fullscreen_check.isChecked()
             configs['spice_autoresize'] = self.autoresize_check.isChecked()
             configs['spice_kiosk'] = self.kiosk_check.isChecked()
+            configs['spice_fluidity_mode'] = self.fluidity_combo.currentText()
+            configs['spice_smartcard'] = self.smartcard_check.isChecked()
+            configs['spice_usbredirect'] = self.usbredirect_check.isChecked()
             self.config_manager.save_configs(configs)
             
-            QMessageBox.information(self, "Configurações", "Configurações SPICE salvas com sucesso!", QMessageBox.Ok)
+            QMessageBox.information(self, "Configurations", "Configs saved!", QMessageBox.Ok)

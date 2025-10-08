@@ -86,7 +86,7 @@ class LoginWindow(QMainWindow):
         form_layout.addWidget(self.totp_input, 3, 1)
 
         # Checkbox Login Automático
-        self.auto_login_check = QCheckBox("Lembrar login e conectar automaticamente")
+        self.auto_login_check = QCheckBox("Remember-me and auto connect")
         self.auto_login_check.setChecked(self.login_data.get('auto_login', False))
         self.auto_login_check.setStyleSheet("""
             QCheckBox {

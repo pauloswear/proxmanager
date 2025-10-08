@@ -8,12 +8,51 @@ class ViewerConfigGenerator:
     def __init__(self, host_ip: str):
         self.host_ip = host_ip
 
-    def _get_optimization_settings(self) -> Dict[str, str]:
-        """ Define os parâmetros de otimização de fluidez SPICE """
-        return {
-            "image-compression": "lz4", 
-            "jpeg-compression": "30" 
-        }
+    def _get_optimization_settings(self, configs: Dict[str, Any]) -> Dict[str, str]:
+        """ Define os parâmetros de otimização de fluidez SPICE baseado nas configurações """
+        
+        # Configurações de fluidez baseadas na preferência do usuário
+        fluidity_mode = configs.get('spice_fluidity_mode', 'balanced')  # balanced, performance, quality
+        
+        settings = {}
+        
+        # Configurações de smartcard e USB redirect baseadas na interface
+        smartcard_enabled = "1" if configs.get('spice_smartcard', True) else "0"
+        usb_enabled = "1" if configs.get('spice_usbredirect', True) else "0"
+        
+        if fluidity_mode == 'performance':
+            # Configurações para máxima fluidez em conexões lentas
+            settings.update({
+                "image-compression": "lz4",        # Compressão mais rápida
+                "jpeg-compression": "70",          # Mais compressão = menos dados
+                "streaming-video": "all",          # Otimiza todos os vídeos
+                "playback-compression": "on",      # Compressão de áudio/vídeo
+                "ca-file": "",                     # Remove verificação SSL para speed
+                "enable-smartcard": smartcard_enabled,
+                "enable-usbredir": usb_enabled
+            })
+        elif fluidity_mode == 'quality':
+            # Configurações para máxima qualidade visual
+            settings.update({
+                "image-compression": "auto_glz",   # Melhor compressão de qualidade
+                "jpeg-compression": "auto",        # Qualidade automática
+                "streaming-video": "off",          # Sem otimização de vídeo
+                "playback-compression": "off",     # Sem compressão de áudio
+                "enable-smartcard": smartcard_enabled,
+                "enable-usbredir": usb_enabled
+            })
+        else:  # balanced (padrão)
+            # Equilibrio entre qualidade e performance
+            settings.update({
+                "image-compression": "auto_lz",
+                "jpeg-compression": "auto",
+                "streaming-video": "filter",       # Filtra apenas vídeos necessários
+                "playback-compression": "auto",    # Compressão automática
+                "enable-smartcard": smartcard_enabled,
+                "enable-usbredir": usb_enabled
+            })
+            
+        return settings
 
     def convert_json_to_vv_format(self, json_data: Dict[str, Any]) -> str:
         """ Converte a resposta JSON da API em um arquivo de configuração .vv para SPICE ou VNC. """
@@ -47,14 +86,14 @@ class ViewerConfigGenerator:
                 f"proxy={proxy}",
             ])
             
-            # Otimizações SPICE
-            for key, value in self._get_optimization_settings().items():
-                vv_file_content_list.append(f"{key}={value}")
-
             # Carregar configurações SPICE
             from utils.config_manager import ConfigManager
             config_manager = ConfigManager()
             configs = config_manager.load_configs()
+            
+            # Otimizações SPICE baseadas nas configurações
+            for key, value in self._get_optimization_settings(configs).items():
+                vv_file_content_list.append(f"{key}={value}")
             
             # Configuração de fullscreen baseada nas configurações
             fullscreen_value = "1" if configs.get('spice_fullscreen', False) else "0"
