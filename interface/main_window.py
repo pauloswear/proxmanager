@@ -995,6 +995,11 @@ class MainWindow(QMainWindow):
         self.autoresize_check.setChecked(configs.get('spice_autoresize', False))
         spice_layout.addRow("Auto resize:", self.autoresize_check)
         
+        # Kiosk mode checkbox
+        self.kiosk_check = QCheckBox()
+        self.kiosk_check.setChecked(configs.get('spice_kiosk', False))
+        spice_layout.addRow("Kiosk mode:", self.kiosk_check)
+        
         layout.addWidget(spice_group)
         
         # Buttons
@@ -1023,6 +1028,7 @@ class MainWindow(QMainWindow):
             # Save SPICE settings
             configs['spice_fullscreen'] = self.fullscreen_check.isChecked()
             configs['spice_autoresize'] = self.autoresize_check.isChecked()
+            configs['spice_kiosk'] = self.kiosk_check.isChecked()
             self.config_manager.save_configs(configs)
             
             QMessageBox.information(self, "Configurações", "Configurações SPICE salvas com sucesso!", QMessageBox.Ok)

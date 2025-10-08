@@ -59,12 +59,16 @@ class ViewerConfigGenerator:
             # Configuração de fullscreen baseada nas configurações
             fullscreen_value = "1" if configs.get('spice_fullscreen', False) else "0"
             
+            # Configuração de kiosk mode baseada nas configurações
+            kiosk_value = "1" if configs.get('spice_kiosk', False) else "0"
+            
             # Outros SPICE
             vv_file_content_list.extend([
                 f"secure-attention={json_data.get('secure-attention', 'ctrl+alt+end')}",
                 f"release-cursor={json_data.get('release-cursor', 'shift+f12')}",
                 f"toggle-fullscreen={json_data.get('toggle-fullscreen', 'no')}",
                 f"fullscreen={fullscreen_value}",
+                f"kiosk={kiosk_value}",
                 f"auto-resize=never"
             ])
             
