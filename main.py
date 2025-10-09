@@ -71,8 +71,8 @@ def show_already_running_message():
     msg = QMessageBox()
     msg.setIcon(QMessageBox.Warning)
     msg.setWindowTitle("ProxManager")
-    msg.setText("ProxManager já está em execução!")
-    msg.setInformativeText("Apenas uma instância da aplicação pode ser executada por vez.")
+    msg.setText("ProxManager is already running!")
+    msg.setInformativeText("Only one instance of the application can be executed at a time.")
     msg.setStandardButtons(QMessageBox.Ok)
     msg.exec_()
     

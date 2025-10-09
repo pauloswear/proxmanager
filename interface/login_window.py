@@ -146,7 +146,7 @@ class LoginWindow(QMainWindow):
             self.auto_login_check.setChecked(True)
             
             # Mostra mensagem de conectando
-            self.connect_btn.setText("Conectando...")
+            self.connect_btn.setText("Connecting...")
             self.connect_btn.setEnabled(False)
             
             # Executa o login automaticamente
@@ -179,7 +179,7 @@ class LoginWindow(QMainWindow):
             # 2. Health Check: Tenta obter uma informação básica (como o status do node)
             # para validar se o token ou as permissões funcionam.
             if api_client.get_node_status() is None:
-                 raise ConnectionError("Conexão bem-sucedida, mas falha ao obter status do Node (Verifique permissões ou HA).")
+                raise ConnectionError("Connection successful, but failed to get node status (Check permissions or HA).")
 
             # 3. Salva as credenciais no login.json (se o Health Check passou)
             login_data = {
@@ -220,8 +220,8 @@ class LoginWindow(QMainWindow):
             
             # Mostra erro de forma segura
             try:
-                QMessageBox.critical(self, "Falha na Conexão", 
-                                   f"Não foi possível conectar ao Proxmox.\n\nDetalhes do Erro: {str(e)}")
+                QMessageBox.critical(self, "Connection Failed", 
+                                   f"Unable to connect to Proxmox.\n\nError Details: {str(e)}")
             except RuntimeError:
                 # Se a janela foi destruída, imprime no console
-                print(f"Erro de conexão: {e}")
+                print(f"Connection error: {e}")

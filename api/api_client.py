@@ -9,9 +9,9 @@ class ProxmoxAPIClient:
         self.user = user
         self.password = password
         self.totp = totp
-        # Usamos o node_name fixo (ou fornecido) para operações de Node
-        self.node = node_name 
         self.proxmox = self._connect()
+        # Detecta automaticamente o node correto após a conexão
+        self.node = self._detect_node(node_name)
 
     def _connect(self) -> ProxmoxAPI:
         """ Conecta à API do Proxmox e valida a autenticação. """
@@ -30,7 +30,32 @@ class ProxmoxAPIClient:
             return api
         except Exception as e:
             # Se houver qualquer falha (rede, SSL, auth), levante a exceção.
-            raise Exception(f"Falha de autenticação ou conexão: {e}") 
+            raise Exception(f"Falha de autenticação ou conexão: {e}")
+    
+    def _detect_node(self, preferred_node: str) -> str:
+        """
+        Detecta automaticamente o node correto.
+        Primeiro tenta o node preferido, caso não exista, usa o primeiro disponível.
+        """
+        try:
+            available_nodes = self.proxmox.nodes.get()
+            node_names = [node['node'] for node in available_nodes]
+            
+            print(f"Nodes disponíveis: {node_names}")
+            
+            # Verifica se o node preferido existe
+            if preferred_node in node_names:
+                print(f"Usando node preferido: '{preferred_node}'")
+                return preferred_node
+            else:
+                # Usa o primeiro node disponível
+                first_node = node_names[0] if node_names else "pve"
+                print(f"Node '{preferred_node}' não encontrado. Usando: '{first_node}'")
+                return first_node
+                
+        except Exception as e:
+            print(f"Erro ao detectar nodes: {e}. Usando node padrão: '{preferred_node}'")
+            return preferred_node 
 
 
     def get_vms_list(self) -> List[Dict[str, Any]]:
