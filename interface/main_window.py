@@ -116,12 +116,9 @@ class MainWindow(QMainWindow):
     def run_update_in_thread(self):
         """Starts separate updates for metrics and VMs - updates as they respond."""
         
-        print(f"[DEBUG] run_update_in_thread chamado - metrics_running: {self.metrics_running}, vms_running: {self.vms_running}")
-        
         # Start metrics update if not already running
         if not self.metrics_running:
             self.metrics_running = True
-            print("[DEBUG] Iniciando worker de métricas...")
             metrics_worker = Worker(self.controller.api_client.get_node_status)
             metrics_worker.signals.result.connect(self.handle_metrics_result)
             metrics_worker.signals.error.connect(self.handle_metrics_error)
@@ -130,7 +127,6 @@ class MainWindow(QMainWindow):
         # Start VMs update if not already running  
         if not self.vms_running:
             self.vms_running = True
-            print("[DEBUG] Iniciando worker de VMs...")
             vms_worker = Worker(self.get_vms_only)
             vms_worker.signals.result.connect(self.handle_vms_result)
             vms_worker.signals.error.connect(self.handle_vms_error)
@@ -150,7 +146,6 @@ class MainWindow(QMainWindow):
     @pyqtSlot(object)
     def handle_metrics_result(self, result):
         """Handle metrics response - update immediately"""
-        print(f"[DEBUG] handle_metrics_result chamado com resultado: {result is not None}")
         if result:
             self.update_node_metrics(result)
         self.metrics_running = False
@@ -158,13 +153,11 @@ class MainWindow(QMainWindow):
     @pyqtSlot(tuple)
     def handle_metrics_error(self, error):
         """Handle metrics error"""
-        print(f"[DEBUG] handle_metrics_error: {error}")
         self.metrics_running = False
 
     @pyqtSlot(object)
     def handle_vms_result(self, result):
         """Handle VMs response - update immediately"""
-        print(f"[DEBUG] handle_vms_result chamado com {len(result) if result else 0} VMs")
         if result:
             self.update_vms_widgets(result)
         self.vms_running = False
@@ -195,10 +188,13 @@ class MainWindow(QMainWindow):
                     if detailed_status:
                         vm.update(detailed_status)
                     
-                    # Busca ostype da configuração da VM para detectar se é Linux
+                    # Busca ostype e vga (display type) da configuração da VM
                     vm_config = self.controller.api_client.get_vm_config(vmid, vm_type)
-                    if vm_config and 'ostype' in vm_config:
-                        vm['ostype'] = vm_config['ostype']
+                    if vm_config:
+                        if 'ostype' in vm_config:
+                            vm['ostype'] = vm_config['ostype']
+                        if 'vga' in vm_config:
+                            vm['vga'] = vm_config['vga']
                     
                     # Busca informações de rede (IP addresses) apenas se a VM estiver rodando
                     if vm.get('status') == 'running':
@@ -702,9 +698,8 @@ class MainWindow(QMainWindow):
             }
             
             self.config_manager.save_configs(configs)
-            print(f"Window config saved: {configs['window']}")  # Debug
         except Exception as e:
-            print(f"Error saving window config: {e}")  # Debug
+            pass  # Silently ignore config save errors
         
         event.accept()
 

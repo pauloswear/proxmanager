@@ -104,17 +104,17 @@ class VMWidget(QWidget):
         self.connect_btn.clicked.connect(self.on_connect_start_clicked)
         action_layout.addWidget(self.connect_btn, 2) 
         
+        self.spice_main_btn = QPushButton("SPICE")
+        self.spice_main_btn.clicked.connect(self.on_spice_clicked)
+        action_layout.addWidget(self.spice_main_btn, 2)
+        
+        self.novnc_main_btn = QPushButton("noVNC")
+        self.novnc_main_btn.clicked.connect(self.on_novnc_clicked)
+        action_layout.addWidget(self.novnc_main_btn, 2)
+        
         self.ssh_btn = QPushButton("SSH")
         self.ssh_btn.clicked.connect(self.on_ssh_clicked)
         action_layout.addWidget(self.ssh_btn, 1)
-        
-        self.spice_btn = QPushButton("SPICE")
-        self.spice_btn.clicked.connect(self.on_spice_clicked)
-        action_layout.addWidget(self.spice_btn, 1)
-        
-        self.novnc_btn = QPushButton("noVNC")
-        self.novnc_btn.clicked.connect(self.on_novnc_clicked)
-        action_layout.addWidget(self.novnc_btn, 1)
         
         self.vnc_btn = QPushButton("VNC")
         self.vnc_btn.clicked.connect(self.on_vnc_clicked)
@@ -136,8 +136,6 @@ class VMWidget(QWidget):
             QPushButton:pressed { background-color: #202020; padding-top: 3px; padding-left: 3px; }
         """
         self.ssh_btn.setStyleSheet(button_style_base.replace("#383838", "#404040") + "color: #28A745; border: 1px solid #28A745;")
-        self.novnc_btn.setStyleSheet(button_style_base.replace("#383838", "#404040") + "color: #FF6B35; border: 1px solid #FF6B35;")
-        self.spice_btn.setStyleSheet(button_style_base.replace("#383838", "#404040") + "color: #00A3CC; border: 1px solid #00A3CC;")
         self.vnc_btn.setStyleSheet(button_style_base.replace("#383838", "#404040") + "color: #CCCCCC; border: 1px solid #777777;")
         self.stop_btn.setStyleSheet(button_style_base.replace("#383838", "#503030") + "color: #DC3545; border: 1px solid #DC3545;")
         self.reboot_btn.setStyleSheet(button_style_base.replace("#383838", "#505030") + "color: #FFC107; border: 1px solid #FFC107;")
@@ -223,8 +221,51 @@ class VMWidget(QWidget):
         is_running = self.status == 'running'
         is_windows = self._is_windows_vm()
         is_linux = self._is_linux_vm()
+        has_spice = self._has_spice_display()
         
-        # Botão principal (Start, RDP para Windows, ou SSH para Linux)
+        # Botão SPICE principal laranja (aparece quando VM tem SPICE configurado)
+        if is_running and has_spice:
+            self.spice_main_btn.setText("SPICE")
+            color = "#FF6B35"  # Laranja para SPICE
+            hover_color = "#FF8555"
+            pressed_color = "#E55525"
+            self.spice_main_btn.setVisible(True)
+            
+            self.spice_main_btn.setStyleSheet(f"""
+                QPushButton {{ 
+                    height: 30px; border-radius: 4px; font-size: 9pt; font-weight: bold; color: white; 
+                    background-color: {color}; border: 1px solid {color};
+                }}
+                QPushButton:hover {{ background-color: {hover_color}; border: 1px solid {hover_color}; }}
+                QPushButton:pressed {{ background-color: {pressed_color}; border: 1px solid {pressed_color};
+                    padding-top: 3px; padding-left: 3px;
+                }}
+            """)
+        else:
+            self.spice_main_btn.setVisible(False)
+        
+        # Botão noVNC principal laranja (aparece quando VM está rodando MAS NÃO tem SPICE)
+        if is_running and not has_spice:
+            self.novnc_main_btn.setText("noVNC")
+            color = "#FF6B35"  # Laranja para noVNC
+            hover_color = "#FF8555"
+            pressed_color = "#E55525"
+            self.novnc_main_btn.setVisible(True)
+            
+            self.novnc_main_btn.setStyleSheet(f"""
+                QPushButton {{ 
+                    height: 30px; border-radius: 4px; font-size: 9pt; font-weight: bold; color: white; 
+                    background-color: {color}; border: 1px solid {color};
+                }}
+                QPushButton:hover {{ background-color: {hover_color}; border: 1px solid {hover_color}; }}
+                QPushButton:pressed {{ background-color: {pressed_color}; border: 1px solid {pressed_color};
+                    padding-top: 3px; padding-left: 3px;
+                }}
+            """)
+        else:
+            self.novnc_main_btn.setVisible(False)
+        
+        # Botão RDP/SSH principal (Start, RDP para Windows, ou SSH para Linux)
         if is_running and is_windows:
             self.connect_btn.setText("RDP")
             color = "#007ACC"  # Azul para RDP
@@ -260,7 +301,7 @@ class VMWidget(QWidget):
                 }}
             """)
         elif is_running:
-            # Para VMs que não são Windows nem Linux rodando, esconde o botão principal
+            # Para VMs que não são Windows nem Linux rodando, esconde o botão RDP/SSH
             self.connect_btn.setVisible(False)
         else:
             self.connect_btn.setText("START VM")
@@ -280,12 +321,10 @@ class VMWidget(QWidget):
                 }}
             """)
         
-        # Botões de controle (Shutdown, Reboot, SSH, noVNC, SPICE, VNC)
+        # Botões de controle (Shutdown, Reboot, SSH, VNC)
         self.stop_btn.setEnabled(is_running)
         self.reboot_btn.setEnabled(is_running)
         self.ssh_btn.setEnabled(is_running)
-        self.novnc_btn.setEnabled(is_running)
-        self.spice_btn.setEnabled(is_running)
         self.vnc_btn.setEnabled(is_running)
         
         self.stop_btn.setVisible(is_running)
@@ -294,13 +333,14 @@ class VMWidget(QWidget):
         # SSH cinza nunca aparece (o botão principal SSH já cobre VMs Linux)
         self.ssh_btn.setVisible(False)
         
-        self.novnc_btn.setVisible(is_running)
-        
-        # SPICE cinza sempre visível quando rodando
-        self.spice_btn.setVisible(is_running)
-        
         # Manter VNC escondido se não for usado ativamente
         self.vnc_btn.setHidden(True)
+    
+    def _has_spice_display(self) -> bool:
+        """Detecta se a VM tem SPICE configurado como display"""
+        vga = self.vm_data.get('vga', '').lower()
+        # Verifica se o display type contém 'qxl' (que é usado para SPICE)
+        return 'qxl' in vga
     
     def _is_windows_vm(self) -> bool:
         """Detecta se a VM é Windows baseado no ostype retornado pela API do Proxmox"""
@@ -344,15 +384,18 @@ class VMWidget(QWidget):
 
     def on_connect_start_clicked(self):
         if self.status == 'running':
-            # Detecta o tipo de VM e usa o protocolo apropriado
-            if self._is_windows_vm():
+            # Prioridade: SPICE > RDP (Windows) > SSH (Linux)
+            if self._has_spice_display():
+                # VM com SPICE configurado -> SPICE
+                worker = ViewerWorker(self.controller, self.vmid, protocol='spice')
+            elif self._is_windows_vm():
                 # Windows -> RDP
                 worker = ViewerWorker(self.controller, self.vmid, protocol='rdp')
             elif self._is_linux_vm():
                 # Linux -> SSH
                 worker = ViewerWorker(self.controller, self.vmid, protocol='ssh')
             else:
-                # Outras VMs -> SPICE (fallback, mas não deveria chegar aqui)
+                # Fallback -> SPICE
                 worker = ViewerWorker(self.controller, self.vmid, protocol='spice')
             self.threadpool.start(worker)
             
