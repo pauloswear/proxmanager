@@ -11,10 +11,6 @@ A native desktop application built with **Python** and **PyQt5** for quick monit
 ## 📝 TO-DO List and Future Improvements
 
  🟡 PENDING
-- [ ] **VNC Support for Linux Machines**  
-  Remote viewing functionality is currently focused on the Windows environment.  
-  The logic for opening VNC connections needs to be adapted for Linux VMs.
-
 - [ ] **Testing on Linux Environments**  
   The application was primarily developed and tested on Windows.  
   Full compatibility across Linux distributions still needs to be verified and ensured.
@@ -22,15 +18,24 @@ A native desktop application built with **Python** and **PyQt5** for quick monit
 - [ ] **Asynchronous Action Indicators**  
   Add visual feedback (like a spinner) to buttons when executing VM actions (*Start*, *Stop*, *Reboot*) to improve the user experience.
   
+
+
+---
+
+ 🟢 COMPLETED
+- [x] **VNC Support for Linux Machines**  
+  Remote viewing functionality is currently focused on the Windows environment.  
+  The logic for opening VNC connections needs to be adapted for Linux VMs.
+
+- [x] **RDP Support for Windows Machines**  
+  Remote viewing functionality is currently focused on the Windows environment.  
+
 - [x] **Folders Organization**  
   Add folders to place servers within them, which will make organization easier
 
 - [x] **Configuration Screen**  
   On the settings screen, options will be added to define whether Spice will open in full screen and whether auto resize will start checked or not.
 
----
-
- 🟢 COMPLETED
 - [x] **VM Metrics Refactoring**  
   Added display of RAM usage in MB (used) vs. GB (total allocated) per VM.
 
