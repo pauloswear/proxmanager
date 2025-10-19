@@ -32,6 +32,7 @@ class VMWidget(QWidget):
         self.status_label = QLabel() 
         self.cpu_usage_label = QLabel()
         self.mem_usage_label = QLabel()
+        self.ip_label = QLabel()
         
         self.setup_ui()
         self.update_data(vm_data) 
@@ -51,6 +52,7 @@ class VMWidget(QWidget):
         # 2. Atualiza os componentes da UI
         self.update_metrics_display()
         self.update_status_display()
+        self.update_ip_display()
         self.update_action_buttons()
 
 
@@ -67,7 +69,7 @@ class VMWidget(QWidget):
                 border: 1px solid #4A90E2;
             }
         """)
-        self.setFixedHeight(65)  # Reduzido de 85 para 65
+        self.setFixedHeight(75)  # Aumentado para acomodar IP
         main_layout = QHBoxLayout(self)
         main_layout.setContentsMargins(15, 3, 10, 3)  # Margem esquerda ajustada para 15px
 
@@ -90,6 +92,7 @@ class VMWidget(QWidget):
         info_layout.addWidget(self.status_label) 
         info_layout.addWidget(self.cpu_usage_label)
         info_layout.addWidget(self.mem_usage_label)
+        info_layout.addWidget(self.ip_label)
         
         main_layout.addWidget(info_widget, 4)
 
@@ -100,6 +103,18 @@ class VMWidget(QWidget):
         self.connect_btn = QPushButton()
         self.connect_btn.clicked.connect(self.on_connect_start_clicked)
         action_layout.addWidget(self.connect_btn, 2) 
+        
+        self.ssh_btn = QPushButton("SSH")
+        self.ssh_btn.clicked.connect(self.on_ssh_clicked)
+        action_layout.addWidget(self.ssh_btn, 1)
+        
+        self.novnc_btn = QPushButton("noVNC")
+        self.novnc_btn.clicked.connect(self.on_novnc_clicked)
+        action_layout.addWidget(self.novnc_btn, 1)
+        
+        self.spice_btn = QPushButton("SPICE")
+        self.spice_btn.clicked.connect(self.on_spice_clicked)
+        action_layout.addWidget(self.spice_btn, 1)
         
         self.vnc_btn = QPushButton("VNC")
         self.vnc_btn.clicked.connect(self.on_vnc_clicked)
@@ -120,6 +135,9 @@ class VMWidget(QWidget):
             QPushButton:hover { background-color: #454545; border: 1px solid #777777; }
             QPushButton:pressed { background-color: #202020; padding-top: 3px; padding-left: 3px; }
         """
+        self.ssh_btn.setStyleSheet(button_style_base.replace("#383838", "#404040") + "color: #28A745; border: 1px solid #28A745;")
+        self.novnc_btn.setStyleSheet(button_style_base.replace("#383838", "#404040") + "color: #FF6B35; border: 1px solid #FF6B35;")
+        self.spice_btn.setStyleSheet(button_style_base.replace("#383838", "#404040") + "color: #00A3CC; border: 1px solid #00A3CC;")
         self.vnc_btn.setStyleSheet(button_style_base.replace("#383838", "#404040") + "color: #CCCCCC; border: 1px solid #777777;")
         self.stop_btn.setStyleSheet(button_style_base.replace("#383838", "#503030") + "color: #DC3545; border: 1px solid #DC3545;")
         self.reboot_btn.setStyleSheet(button_style_base.replace("#383838", "#505030") + "color: #FFC107; border: 1px solid #FFC107;")
@@ -173,6 +191,32 @@ class VMWidget(QWidget):
         self.status_label.setStyleSheet(f"color: {color}; font-size: 8pt;")
         self.status_indicator.setStyleSheet(f"QLabel {{ background-color: {color}; border-radius: 5px; }}")
 
+    def update_ip_display(self):
+        """ Atualiza a exibição dos endereços IP. """
+        ip_addresses = self.vm_data.get('ip_addresses', [])
+        # Debug log commented out
+        
+        if ip_addresses:
+            # Filtra apenas IPv4 para uma exibição mais limpa
+            ipv4_addresses = [ip for ip in ip_addresses if '.' in ip and not ip.startswith('127.')]
+            # IPv4 filtering applied
+            
+            if ipv4_addresses:
+                # Exibe apenas o primeiro IP IPv4 válido
+                ip_text = f"IP: {ipv4_addresses[0]}"
+                if len(ipv4_addresses) > 1:
+                    ip_text += f" (+{len(ipv4_addresses)-1})"
+            elif ip_addresses:
+                # Se não há IPv4, exibe o primeiro IP disponível
+                ip_text = f"IP: {ip_addresses[0]}"
+            else:
+                ip_text = "IP: N/A"
+        else:
+            ip_text = "IP: N/A" if self.status == 'running' else "IP: Stopped"
+        
+
+        self.ip_label.setText(ip_text)
+        self.ip_label.setStyleSheet("color: #90EE90; font-size: 8pt;")
 
     def update_action_buttons(self):
         """ Atualiza a aparência e o estado dos botões de ação. """
@@ -180,10 +224,10 @@ class VMWidget(QWidget):
         
         # Botão principal (Connect/Start)
         if is_running:
-            self.connect_btn.setText("SPICE")
-            color = "#00A3CC"
-            hover_color = "#00BFFF"
-            pressed_color = "#007090"
+            self.connect_btn.setText("RDP")
+            color = "#007ACC"  # Azul mais escuro para RDP
+            hover_color = "#0099FF"
+            pressed_color = "#005999"
         else:
             self.connect_btn.setText("START VM")
             color = "#28A745"
@@ -201,17 +245,36 @@ class VMWidget(QWidget):
             }}
         """)
         
-        # Botões de controle (Shutdown, Reboot, VNC)
+        # Botões de controle (Shutdown, Reboot, SSH, noVNC, SPICE, VNC)
         self.stop_btn.setEnabled(is_running)
         self.reboot_btn.setEnabled(is_running)
+        self.ssh_btn.setEnabled(is_running)
+        self.novnc_btn.setEnabled(is_running)
+        self.spice_btn.setEnabled(is_running)
         self.vnc_btn.setEnabled(is_running)
         
         self.stop_btn.setVisible(is_running)
         self.reboot_btn.setVisible(is_running)
+        self.ssh_btn.setVisible(is_running)
+        self.novnc_btn.setVisible(is_running)
+        self.spice_btn.setVisible(is_running)
         # Manter VNC escondido se não for usado ativamente
         self.vnc_btn.setHidden(True) 
 
     # --- Métodos de Clique (Ações) ---
+
+    def on_ssh_clicked(self):
+        # Versão simplificada: conecta diretamente com usuário padrão
+        worker = ViewerWorker(self.controller, self.vmid, protocol='ssh')
+        self.threadpool.start(worker)
+
+    def on_novnc_clicked(self):
+        worker = ViewerWorker(self.controller, self.vmid, protocol='novnc')
+        self.threadpool.start(worker)
+
+    def on_spice_clicked(self):
+        worker = ViewerWorker(self.controller, self.vmid, protocol='spice')
+        self.threadpool.start(worker)
 
     def on_vnc_clicked(self):
         worker = ViewerWorker(self.controller, self.vmid, protocol='vnc')
@@ -219,8 +282,8 @@ class VMWidget(QWidget):
 
     def on_connect_start_clicked(self):
         if self.status == 'running':
-            # Abre o cliente SPICE/Viewer em uma nova thread
-            worker = ViewerWorker(self.controller, self.vmid, protocol='spice')
+            # Abre o cliente RDP em uma nova thread
+            worker = ViewerWorker(self.controller, self.vmid, protocol='rdp')
             self.threadpool.start(worker)
             
         else:

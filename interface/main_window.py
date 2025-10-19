@@ -187,6 +187,20 @@ class MainWindow(QMainWindow):
                     
                     if detailed_status:
                         vm.update(detailed_status)
+                    
+                    # Busca informações de rede (IP addresses) apenas se a VM estiver rodando
+                    if vm.get('status') == 'running':
+                        # print(f"DEBUG: VM {vmid} ({vm_type}) está rodando, buscando IP...")
+                        try:
+                            ip_addresses = self.controller.api_client.get_vm_network_info(vmid, vm_type)
+                            vm['ip_addresses'] = ip_addresses
+                            # print(f"DEBUG: VM {vmid} IPs atribuídos: {ip_addresses}")
+                        except Exception as e:
+                            print(f"Erro ao buscar IP para VM {vmid}: {e}")
+                            vm['ip_addresses'] = []
+                    else:
+                        # print(f"DEBUG: VM {vmid} não está rodando (status: {vm.get('status')})")
+                        vm['ip_addresses'] = []
                         
                     updated_vms_list.append(vm)
                     

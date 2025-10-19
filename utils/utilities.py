@@ -87,3 +87,79 @@ class ViewerWorker(QRunnable):
             # Captura exceções no thread para depuração
             print(f"ERRO no ViewerWorker para VM {self.vmid}: {e}")
             traceback.print_exc()
+
+
+class SSHWorker(QRunnable):
+    """
+    QRunnable para executar conexão SSH com configurações personalizadas.
+    """
+    def __init__(self, controller: ProxmoxController, vmid: int, ssh_config: dict):
+        super().__init__()
+        self.controller = controller
+        self.vmid = vmid
+        self.ssh_config = ssh_config
+        self.setAutoDelete(True)
+
+    def run(self):
+        """ Executa a conexão SSH com as configurações personalizadas. """
+        try:
+            import subprocess
+            import os
+            
+            ssh_ip = self.ssh_config['ip']
+            ssh_port = self.ssh_config['port']
+            ssh_user = self.ssh_config['user']
+            
+            print(f"Worker: Conectando SSH para VM {self.vmid} ({ssh_user}@{ssh_ip}:{ssh_port})...")
+            
+            if os.name == 'nt':  # Windows
+                # Localiza o caminho do SSH do Windows
+                ssh_paths = [
+                    r'C:\Windows\System32\OpenSSH\ssh.exe',
+                    r'C:\Program Files\OpenSSH\ssh.exe',
+                    'ssh'  # Fallback para PATH
+                ]
+                
+                ssh_found = False
+                for ssh_path in ssh_paths:
+                    try:
+                        # Testa se o SSH existe
+                        if ssh_path != 'ssh':
+                            if not os.path.exists(ssh_path):
+                                continue
+                        
+                        # Abre CMD em nova janela com SSH
+                        ssh_cmd = f'start "SSH - VM {self.vmid}" cmd /k "{ssh_path}" {ssh_user}@{ssh_ip} -p {ssh_port}'
+                        subprocess.Popen(ssh_cmd, shell=True)
+                        ssh_found = True
+                        break
+                    except Exception:
+                        continue
+                
+                if not ssh_found:
+                    # Fallback para PuTTY
+                    try:
+                        putty_args = ['putty', f'{ssh_user}@{ssh_ip}', '-P', str(ssh_port)]
+                        subprocess.Popen(putty_args)
+                    except Exception as final_e:
+                        print(f"Erro: OpenSSH e PuTTY não encontrados. Instale um cliente SSH. Erro: {final_e}")
+            else:  # Linux/Unix
+                # Usa terminal nativo
+                terminal_cmds = [
+                    ['gnome-terminal', '--', 'ssh', f'{ssh_user}@{ssh_ip}', '-p', str(ssh_port)],
+                    ['konsole', '-e', 'ssh', f'{ssh_user}@{ssh_ip}', '-p', str(ssh_port)],
+                    ['xterm', '-e', 'ssh', f'{ssh_user}@{ssh_ip}', '-p', str(ssh_port)]
+                ]
+                
+                for cmd in terminal_cmds:
+                    try:
+                        subprocess.Popen(cmd)
+                        break
+                    except FileNotFoundError:
+                        continue
+                else:
+                    print("Erro: Terminal não encontrado. Instale gnome-terminal, konsole ou xterm.")
+                    
+        except Exception as e:
+            print(f"ERRO no SSHWorker para VM {self.vmid}: {e}")
+            traceback.print_exc()

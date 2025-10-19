@@ -1,8 +1,9 @@
 # controller.py
-
+import platform
 import os
 import tempfile
 import subprocess
+import shutil
 from time import sleep
 from typing import Union, Tuple, Any, Dict, List, Optional
 from .api_client import ProxmoxAPIClient
@@ -34,7 +35,7 @@ class ProxmoxController:
             # 2. Obter Lista de VMs/Containers (Dados básicos)
             vms_list = self.api_client.get_vms_list()
             
-            # 3. Iterar e enriquecer os dados com a chamada /status/current
+            # 3. Iterar e enriquecer os dados com a chamada /status/current e informações de rede
             if vms_list:
                 for vm in vms_list:
                     vmid = vm.get('vmid')
@@ -51,6 +52,20 @@ class ProxmoxController:
                         # Substitui as métricas básicas (mem/maxmem/cpu) pelas mais precisas
                         # Isso garante que o VMWidget use a fonte correta
                         vm.update(detailed_status)
+                    
+                    # Busca informações de rede (IP addresses) apenas se a VM estiver rodando
+                    if vm.get('status') == 'running':
+                        print(f"DEBUG: VM {vmid} ({vm_type}) está rodando, buscando IP...")
+                        try:
+                            ip_addresses = self.api_client.get_vm_network_info(vmid, vm_type)
+                            vm['ip_addresses'] = ip_addresses
+                            print(f"DEBUG: VM {vmid} IPs atribuídos: {ip_addresses}")
+                        except Exception as e:
+                            print(f"DEBUG: Erro ao buscar IP para VM {vmid}: {e}")
+                            vm['ip_addresses'] = []
+                    else:
+                        print(f"DEBUG: VM {vmid} não está rodando (status: {vm.get('status')})")
+                        vm['ip_addresses'] = []
                         
                     updated_vms_list.append(vm)
 
@@ -93,7 +108,8 @@ class ProxmoxController:
         Retorna True em caso de sucesso, False em caso de falha (ex: VM sem o protocolo).
         """
         viewer_path = self._get_remote_viewer_path()
-        if not viewer_path:
+        # Para RDP, noVNC e SSH, não precisamos do remote-viewer
+        if protocol not in ['rdp', 'novnc', 'ssh'] and not viewer_path:
             print("ERRO: O executável 'remote-viewer' ou 'virt-viewer' não foi encontrado.")
             return False
 
@@ -101,44 +117,165 @@ class ProxmoxController:
         
         try:
             # 1. Obtém a configuração do servidor baseada no protocolo
-            if protocol == 'spice':
-                config_json = self.api_client.get_spice_config(vmid)
-            elif protocol == 'vnc':
-                config_json = self.api_client.get_vnc_config(vmid)
-            else:
-                raise ValueError(f"Protocolo desconhecido: {protocol}")
-            
-            # Adiciona o tipo de protocolo no JSON para que o ViewerConfigGenerator saiba o que fazer
-            config_json['protocol_type'] = protocol
+            if protocol == 'rdp':
+                # RDP tem tratamento especial
+                config_json = self.api_client.get_rdp_config(vmid)
                 
-            # 2. Gera o conteúdo .vv formatado
-            vv_content = self.config_generator.convert_json_to_vv_format(config_json)
-            
-            # 3. Cria e executa o arquivo temporário
-            with tempfile.NamedTemporaryFile(mode='w+t', suffix='.vv', delete=False, encoding="utf-8") as temp_file:
-                temp_file.write(vv_content)
-                inifile_path = temp_file.name
-            
-            # 4. Carregar configurações SPICE
-            from utils.config_manager import ConfigManager
-            config_manager = ConfigManager()
-            configs = config_manager.load_configs()
-            
-            # Preparar argumentos para o viewer
-            viewer_args = [viewer_path]
-            
-            # Auto-resize baseado na configuração
-            if configs.get('spice_autoresize', False):
-                viewer_args.append("--auto-resize=always")
+                if not config_json.get('ip'):
+                    print(f"Erro: IP não disponível para VM {vmid}. Certifique-se que o guest-agent está ativo.")
+                    return False
+                
+                # Inicia conexão RDP usando mstsc (Windows) ou rdesktop (Linux)
+                rdp_ip = config_json['ip']
+                rdp_port = config_json['port']
+                
+                if os.name == 'nt':  # Windows
+                    # Usa o cliente RDP nativo do Windows (mstsc)
+                    rdp_args = ['mstsc', f'/v:{rdp_ip}:{rdp_port}']
+                    print(f"Iniciando VM {vmid} via RDP ({rdp_ip}:{rdp_port})...")
+                    subprocess.Popen(rdp_args)
+                else:  # Linux/Unix
+                    # Tenta usar rdesktop ou xfreerdp
+                    try:
+                        # Primeiro tenta xfreerdp
+                        rdp_args = ['xfreerdp', f'/v:{rdp_ip}:{rdp_port}', '/cert-tofu']
+                        subprocess.Popen(rdp_args)
+                    except FileNotFoundError:
+                        try:
+                            # Fallback para rdesktop
+                            rdp_args = ['rdesktop', f'{rdp_ip}:{rdp_port}']
+                            subprocess.Popen(rdp_args)
+                        except FileNotFoundError:
+                            print("Erro: Cliente RDP não encontrado. Instale xfreerdp ou rdesktop.")
+                            return False
+                    print(f"Iniciando VM {vmid} via RDP ({rdp_ip}:{rdp_port})...")
+                
+                return True
+                
+            elif protocol == 'novnc':
+                # noVNC abre no navegador web
+                config_json = self.api_client.get_novnc_config(vmid)
+                
+                if not config_json.get('url'):
+                    print(f"Erro: URL noVNC não disponível para VM {vmid}.")
+                    return False
+                
+                # Abre a URL do noVNC no navegador padrão
+                novnc_url = config_json['url']
+                print(f"Abrindo VM {vmid} via noVNC ({novnc_url})...")
+                
+                try:
+                    import webbrowser
+                    webbrowser.open(novnc_url)
+                    return True
+                except Exception as e:
+                    print(f"Erro ao abrir noVNC no navegador: {e}")
+                    return False
+                
+            elif protocol == 'ssh':
+                # SSH abre terminal/cliente SSH
+                config_json = self.api_client.get_ssh_config(vmid)
+                
+                if not config_json.get('ip'):
+                    print(f"Erro: IP não disponível para VM {vmid}. Certifique-se que o guest-agent está ativo.")
+                    return False
+                
+                ssh_ip = config_json['ip']
+                ssh_port = config_json['port']
+                default_user = config_json['default_user']
+                
+                print(f"Iniciando SSH para VM {vmid} ({default_user}@{ssh_ip}:{ssh_port})...")
+
+                if os.name == 'nt':  # Windows
+                    try:
+                        # Adiciona o caminho do OpenSSH no PATH se necessário
+                        if platform.architecture()[0] == "32bit" and os.name == "nt":
+                            os.environ["PATH"] += r";C:\Windows\Sysnative\OpenSSH"
+                        
+
+                        # Usa start para abrir nova janela do CMD com SSH
+                        ssh_cmd = f'start "SSH - VM {vmid}" cmd /k ssh {default_user}@{ssh_ip} -p {ssh_port}'
+                        print(f"Executando: {ssh_cmd}")
+                        os.system(ssh_cmd)
+                        print(f"SSH conectando para {default_user}@{ssh_ip}:{ssh_port}")
+                        return True
+                    except Exception as e:
+                        print(f"Erro ao executar SSH: {e}")
+                        
+                        # Fallback para PuTTY se SSH não funcionar
+                        try:
+                            putty_path = shutil.which('putty')
+                            if putty_path or os.path.exists(r'C:\Program Files\PuTTY\putty.exe'):
+                                putty_exe = putty_path or r'C:\Program Files\PuTTY\putty.exe'
+                                putty_args = [putty_exe, f'{default_user}@{ssh_ip}', '-P', str(ssh_port)]
+                                subprocess.Popen(putty_args)
+                                print(f"SSH conectando via PuTTY: {putty_exe}")
+                                return True
+                        except Exception:
+                            pass
+                        
+                        print("Erro: SSH e PuTTY não funcionaram. Verifique se o OpenSSH está instalado.")
+                        return False
+                else:  # Linux/Unix
+                    # Usa terminal nativo
+                    terminal_cmds = [
+                        ['gnome-terminal', '--', 'ssh', f'{default_user}@{ssh_ip}', '-p', str(ssh_port)],
+                        ['konsole', '-e', 'ssh', f'{default_user}@{ssh_ip}', '-p', str(ssh_port)],
+                        ['xterm', '-e', 'ssh', f'{default_user}@{ssh_ip}', '-p', str(ssh_port)]
+                    ]
+                    
+                    for cmd in terminal_cmds:
+                        try:
+                            subprocess.Popen(cmd)
+                            break
+                        except FileNotFoundError:
+                            continue
+                    else:
+                        print("Erro: Terminal não encontrado. Instale gnome-terminal, konsole ou xterm.")
+                        return False
+                
+                return True
+                
             else:
-                viewer_args.append("--auto-resize=never")
-            
-            viewer_args.append(inifile_path)
-            
-            print(f"Iniciando VM {vmid} via {protocol.upper()}...")
-            subprocess.Popen(viewer_args) 
-            sleep(5) 
-            return True
+                # SPICE e VNC usam o remote-viewer
+                if protocol == 'spice':
+                    config_json = self.api_client.get_spice_config(vmid)
+                elif protocol == 'vnc':
+                    config_json = self.api_client.get_vnc_config(vmid)
+                else:
+                    raise ValueError(f"Protocolo desconhecido: {protocol}")
+                
+                # Adiciona o tipo de protocolo no JSON para que o ViewerConfigGenerator saiba o que fazer
+                config_json['protocol_type'] = protocol
+                    
+                # 2. Gera o conteúdo .vv formatado
+                vv_content = self.config_generator.convert_json_to_vv_format(config_json)
+                
+                # 3. Cria e executa o arquivo temporário
+                with tempfile.NamedTemporaryFile(mode='w+t', suffix='.vv', delete=False, encoding="utf-8") as temp_file:
+                    temp_file.write(vv_content)
+                    inifile_path = temp_file.name
+                
+                # 4. Carregar configurações SPICE
+                from utils.config_manager import ConfigManager
+                config_manager = ConfigManager()
+                configs = config_manager.load_configs()
+                
+                # Preparar argumentos para o viewer
+                viewer_args = [viewer_path]
+                
+                # Auto-resize baseado na configuração
+                if configs.get('spice_autoresize', False):
+                    viewer_args.append("--auto-resize=always")
+                else:
+                    viewer_args.append("--auto-resize=never")
+                
+                viewer_args.append(inifile_path)
+                
+                print(f"Iniciando VM {vmid} via {protocol.upper()}...")
+                subprocess.Popen(viewer_args) 
+                sleep(5) 
+                return True
 
         except Exception as e:
             print(f"Ocorreu um erro durante a conexão {protocol.upper()}: {e}")
