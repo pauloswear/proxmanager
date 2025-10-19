@@ -103,48 +103,28 @@ class SSHWorker(QRunnable):
     def run(self):
         """ Executa a conexão SSH com as configurações personalizadas. """
         try:
-            import subprocess
             import os
             
             ssh_ip = self.ssh_config['ip']
             ssh_port = self.ssh_config['port']
             ssh_user = self.ssh_config['user']
             
-            print(f"Worker: Conectando SSH para VM {self.vmid} ({ssh_user}@{ssh_ip}:{ssh_port})...")
-            
             if os.name == 'nt':  # Windows
-                # Localiza o caminho do SSH do Windows
-                ssh_paths = [
-                    r'C:\Windows\System32\OpenSSH\ssh.exe',
-                    r'C:\Program Files\OpenSSH\ssh.exe',
-                    'ssh'  # Fallback para PATH
-                ]
+                # Força uso do OpenSSH do Windows
+                openssh_path = r'C:\Windows\System32\OpenSSH\ssh.exe'
                 
-                ssh_found = False
-                for ssh_path in ssh_paths:
-                    try:
-                        # Testa se o SSH existe
-                        if ssh_path != 'ssh':
-                            if not os.path.exists(ssh_path):
-                                continue
-                        
-                        # Abre CMD em nova janela com SSH
-                        ssh_cmd = f'start "SSH - VM {self.vmid}" cmd /k "{ssh_path}" {ssh_user}@{ssh_ip} -p {ssh_port}'
-                        subprocess.Popen(ssh_cmd, shell=True)
-                        ssh_found = True
-                        break
-                    except Exception:
-                        continue
+                if os.path.exists(openssh_path):
+                    # Usa OpenSSH oficial do Windows
+                    ssh_cmd = f'start "SSH - VM {self.vmid}" cmd /k "{openssh_path}" {ssh_user}@{ssh_ip} -P {ssh_port}'
+                else:
+                    # Tenta SSH genérico do PATH
+                    ssh_cmd = f'start "SSH - VM {self.vmid}" cmd /k ssh {ssh_user}@{ssh_ip} -P {ssh_port}'
+
+                os.system(ssh_cmd)
                 
-                if not ssh_found:
-                    # Fallback para PuTTY
-                    try:
-                        putty_args = ['putty', f'{ssh_user}@{ssh_ip}', '-P', str(ssh_port)]
-                        subprocess.Popen(putty_args)
-                    except Exception as final_e:
-                        print(f"Erro: OpenSSH e PuTTY não encontrados. Instale um cliente SSH. Erro: {final_e}")
             else:  # Linux/Unix
                 # Usa terminal nativo
+                import subprocess
                 terminal_cmds = [
                     ['gnome-terminal', '--', 'ssh', f'{ssh_user}@{ssh_ip}', '-p', str(ssh_port)],
                     ['konsole', '-e', 'ssh', f'{ssh_user}@{ssh_ip}', '-p', str(ssh_port)],

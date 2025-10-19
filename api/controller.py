@@ -200,7 +200,7 @@ class ProxmoxController:
                         
 
                         # Usa start para abrir nova janela do CMD com SSH
-                        ssh_cmd = f'start "SSH - VM {vmid}" cmd /k ssh {default_user}@{ssh_ip} -p {ssh_port}'
+                        ssh_cmd = f'start "SSH - VM {vmid}" cmd /k ssh {default_user}@{ssh_ip} -P {ssh_port}'
                         print(f"Executando: {ssh_cmd}")
                         os.system(ssh_cmd)
                         print(f"SSH conectando para {default_user}@{ssh_ip}:{ssh_port}")
