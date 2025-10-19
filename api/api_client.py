@@ -269,6 +269,26 @@ class ProxmoxAPIClient:
                 'os_info': {}
             }
 
+    def get_vm_config(self, vmid: Union[str, int], vm_type: str) -> Dict[str, Any] | None:
+        """
+        Busca a configuração completa da VM/Container, incluindo ostype.
+        Endpoint: /nodes/{node}/(lxc|qemu)/{vmid}/config
+        """
+        if vm_type not in ['lxc', 'qemu']:
+            print(f"Tipo de VM desconhecido: {vm_type}")
+            return None
+            
+        try:
+            if vm_type == 'lxc':
+                config_data = self.proxmox.nodes(self.node).lxc(str(vmid)).config.get()
+            else:
+                config_data = self.proxmox.nodes(self.node).qemu(str(vmid)).config.get()
+                
+            return config_data
+        except Exception as e:
+            print(f"Erro ao buscar configuração da {vm_type} {vmid}: {e}")
+            return None
+
     def get_vm_current_status(self, vmid: Union[str, int], vm_type: str) -> Dict[str, Any] | None:
         """
         Busca o status atual ('status/current') da VM (QEMU) ou Container (LXC).

@@ -27,7 +27,7 @@ class ProxmoxController:
         node_status = None
         vms_list = None
         updated_vms_list = []
-        
+        print("CHAMADO")
         try:
             # 1. Obter Status do Node (CPU, RAM, Uptime)
             node_status = self.api_client.get_node_status()
@@ -52,6 +52,12 @@ class ProxmoxController:
                         # Substitui as métricas básicas (mem/maxmem/cpu) pelas mais precisas
                         # Isso garante que o VMWidget use a fonte correta
                         vm.update(detailed_status)
+                    
+                    # Busca ostype da configuração da VM para detectar se é Linux
+                    vm_config = self.api_client.get_vm_config(vmid, vm_type)
+                    print(vm_config)
+                    if vm_config and 'ostype' in vm_config:
+                        vm['ostype'] = vm_config['ostype']
                     
                     # Busca informações de rede (IP addresses) apenas se a VM estiver rodando
                     if vm.get('status') == 'running':

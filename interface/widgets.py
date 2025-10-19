@@ -108,13 +108,13 @@ class VMWidget(QWidget):
         self.ssh_btn.clicked.connect(self.on_ssh_clicked)
         action_layout.addWidget(self.ssh_btn, 1)
         
-        self.novnc_btn = QPushButton("noVNC")
-        self.novnc_btn.clicked.connect(self.on_novnc_clicked)
-        action_layout.addWidget(self.novnc_btn, 1)
-        
         self.spice_btn = QPushButton("SPICE")
         self.spice_btn.clicked.connect(self.on_spice_clicked)
         action_layout.addWidget(self.spice_btn, 1)
+        
+        self.novnc_btn = QPushButton("noVNC")
+        self.novnc_btn.clicked.connect(self.on_novnc_clicked)
+        action_layout.addWidget(self.novnc_btn, 1)
         
         self.vnc_btn = QPushButton("VNC")
         self.vnc_btn.clicked.connect(self.on_vnc_clicked)
@@ -221,29 +221,64 @@ class VMWidget(QWidget):
     def update_action_buttons(self):
         """ Atualiza a aparência e o estado dos botões de ação. """
         is_running = self.status == 'running'
+        is_windows = self._is_windows_vm()
+        is_linux = self._is_linux_vm()
         
-        # Botão principal (Connect/Start)
-        if is_running:
+        # Botão principal (Start, RDP para Windows, ou SSH para Linux)
+        if is_running and is_windows:
             self.connect_btn.setText("RDP")
-            color = "#007ACC"  # Azul mais escuro para RDP
+            color = "#007ACC"  # Azul para RDP
             hover_color = "#0099FF"
             pressed_color = "#005999"
+            self.connect_btn.setVisible(True)
+            
+            self.connect_btn.setStyleSheet(f"""
+                QPushButton {{ 
+                    height: 30px; border-radius: 4px; font-size: 9pt; font-weight: bold; color: white; 
+                    background-color: {color}; border: 1px solid {color};
+                }}
+                QPushButton:hover {{ background-color: {hover_color}; border: 1px solid {hover_color}; }}
+                QPushButton:pressed {{ background-color: {pressed_color}; border: 1px solid {pressed_color};
+                    padding-top: 3px; padding-left: 3px;
+                }}
+            """)
+        elif is_running and is_linux:
+            self.connect_btn.setText("SSH")
+            color = "#007ACC"  # Azul para SSH
+            hover_color = "#0099FF"
+            pressed_color = "#005999"
+            self.connect_btn.setVisible(True)
+            
+            self.connect_btn.setStyleSheet(f"""
+                QPushButton {{ 
+                    height: 30px; border-radius: 4px; font-size: 9pt; font-weight: bold; color: white; 
+                    background-color: {color}; border: 1px solid {color};
+                }}
+                QPushButton:hover {{ background-color: {hover_color}; border: 1px solid {hover_color}; }}
+                QPushButton:pressed {{ background-color: {pressed_color}; border: 1px solid {pressed_color};
+                    padding-top: 3px; padding-left: 3px;
+                }}
+            """)
+        elif is_running:
+            # Para VMs que não são Windows nem Linux rodando, esconde o botão principal
+            self.connect_btn.setVisible(False)
         else:
             self.connect_btn.setText("START VM")
             color = "#28A745"
             hover_color = "#30C750"
             pressed_color = "#1F7A35"
-
-        self.connect_btn.setStyleSheet(f"""
-            QPushButton {{ 
-                height: 30px; border-radius: 4px; font-size: 9pt; font-weight: bold; color: white; 
-                background-color: {color}; border: 1px solid {color};
-            }}
-            QPushButton:hover {{ background-color: {hover_color}; border: 1px solid {hover_color}; }}
-            QPushButton:pressed {{ background-color: {pressed_color}; border: 1px solid {pressed_color};
-                padding-top: 3px; padding-left: 3px;
-            }}
-        """)
+            self.connect_btn.setVisible(True)
+            
+            self.connect_btn.setStyleSheet(f"""
+                QPushButton {{ 
+                    height: 30px; border-radius: 4px; font-size: 9pt; font-weight: bold; color: white; 
+                    background-color: {color}; border: 1px solid {color};
+                }}
+                QPushButton:hover {{ background-color: {hover_color}; border: 1px solid {hover_color}; }}
+                QPushButton:pressed {{ background-color: {pressed_color}; border: 1px solid {pressed_color};
+                    padding-top: 3px; padding-left: 3px;
+                }}
+            """)
         
         # Botões de controle (Shutdown, Reboot, SSH, noVNC, SPICE, VNC)
         self.stop_btn.setEnabled(is_running)
@@ -255,11 +290,38 @@ class VMWidget(QWidget):
         
         self.stop_btn.setVisible(is_running)
         self.reboot_btn.setVisible(is_running)
-        self.ssh_btn.setVisible(is_running)
+        
+        # SSH cinza nunca aparece (o botão principal SSH já cobre VMs Linux)
+        self.ssh_btn.setVisible(False)
+        
         self.novnc_btn.setVisible(is_running)
+        
+        # SPICE cinza sempre visível quando rodando
         self.spice_btn.setVisible(is_running)
+        
         # Manter VNC escondido se não for usado ativamente
-        self.vnc_btn.setHidden(True) 
+        self.vnc_btn.setHidden(True)
+    
+    def _is_windows_vm(self) -> bool:
+        """Detecta se a VM é Windows baseado no ostype retornado pela API do Proxmox"""
+        ostype = self.vm_data.get('ostype', '').lower()
+        
+        # Identificadores Windows comuns no Proxmox
+        # win10, win11, win8, win7, w2k22, w2k19, w2k16, w2k12, w2k8
+        windows_ostypes = ['win', 'w2k']
+        
+        return any(win_type in ostype for win_type in windows_ostypes)
+    
+    def _is_linux_vm(self) -> bool:
+        """Detecta se a VM é Linux baseado no ostype retornado pela API do Proxmox"""
+        ostype = self.vm_data.get('ostype', '').lower()
+        
+        # Identificadores Linux comuns no Proxmox
+        # l24 = Linux 2.4 Kernel, l26 = Linux 2.6+ Kernel
+        linux_ostypes = ['l24', 'l26', 'linux', 'ubuntu', 'debian', 'centos', 
+                         'fedora', 'opensuse', 'archlinux', 'gentoo', 'alpine']
+        
+        return any(linux_type in ostype for linux_type in linux_ostypes) 
 
     # --- Métodos de Clique (Ações) ---
 
@@ -282,12 +344,20 @@ class VMWidget(QWidget):
 
     def on_connect_start_clicked(self):
         if self.status == 'running':
-            # Abre o cliente RDP em uma nova thread
-            worker = ViewerWorker(self.controller, self.vmid, protocol='rdp')
+            # Detecta o tipo de VM e usa o protocolo apropriado
+            if self._is_windows_vm():
+                # Windows -> RDP
+                worker = ViewerWorker(self.controller, self.vmid, protocol='rdp')
+            elif self._is_linux_vm():
+                # Linux -> SSH
+                worker = ViewerWorker(self.controller, self.vmid, protocol='ssh')
+            else:
+                # Outras VMs -> SPICE (fallback, mas não deveria chegar aqui)
+                worker = ViewerWorker(self.controller, self.vmid, protocol='spice')
             self.threadpool.start(worker)
             
         else:
-            # Ação de controle síncrona
+            # Ação de controle síncrona - START VM
             if self.controller.api_client.start_vm(self.vmid):
                 # Dispara um sinal para forçar a MainWindow a atualizar o dashboard
                 self.action_performed.emit() 
