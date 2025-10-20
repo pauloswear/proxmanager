@@ -4,7 +4,7 @@ import os
 import json
 import traceback 
 from typing import Dict, Any
-from PyQt5.QtCore import QRunnable, QThreadPool
+from PyQt5.QtCore import QRunnable, QThreadPool, pyqtSignal, QObject
 from api import ProxmoxController # Assume que ProxmoxController está acessível
 
 # --- CONSTANTES ---
@@ -58,17 +58,26 @@ def save_config(host: str, user: str, password: str, totp: str | None):
         print(f"Erro ao salvar o arquivo de configuração: {e}")
 
 
+# --- SINAIS PARA WORKERS ---
+class ViewerWorkerSignals(QObject):
+    """Sinais para comunicação do ViewerWorker com a thread principal"""
+    finished = pyqtSignal(int, int, str)  # (vmid, pid, protocol)
+    error = pyqtSignal(int, str)  # (vmid, error_message)
+
+
 # --- CLASSE WORKER PARA EXECUTAR TAREFAS EM SEGUNDO PLANO ---
 class ViewerWorker(QRunnable):
     """
-    QRunnable para executar a conexão do viewer (SPICE/VNC) em um thread.
+    QRunnable para executar a conexão do viewer (SPICE/VNC/RDP/SSH) em um thread.
     Isso evita que a GUI congele durante o processo de conexão.
+    Emite sinais quando o processo é criado com sucesso.
     """
-    def __init__(self, controller: ProxmoxController, vmid: int, protocol: str):
+    def __init__(self, controller, vmid: int, protocol: str):
         super().__init__()
         self.controller = controller
         self.vmid = vmid
         self.protocol = protocol
+        self.signals = ViewerWorkerSignals()
         # Garante que o worker seja deletado após a execução
         self.setAutoDelete(True) 
 
@@ -76,15 +85,27 @@ class ViewerWorker(QRunnable):
         """ Lógica que será executada no thread separado. """
         try:
             # A chamada que bloqueia a thread principal é movida para aqui
-            success = self.controller.start_viewer(self.vmid, protocol=self.protocol)
+            pid = self.controller.start_viewer(self.vmid, protocol=self.protocol)
             
-            if not success and self.protocol == 'spice':
-                 self.controller.start_viewer(self.vmid, protocol='vnc')
+            if pid:
+                # Sucesso! Emite sinal com o PID
+                self.signals.finished.emit(self.vmid, pid, self.protocol)
+            elif not pid and self.protocol == 'spice':
+                # SPICE falhou, tenta VNC
+                pid = self.controller.start_viewer(self.vmid, protocol='vnc')
+                if pid:
+                    self.signals.finished.emit(self.vmid, pid, 'vnc')
+                else:
+                    self.signals.error.emit(self.vmid, "Falha ao conectar via SPICE e VNC")
+            else:
+                self.signals.error.emit(self.vmid, f"Falha ao conectar via {self.protocol}")
 
         except Exception as e:
             # Captura exceções no thread para depuração
-            print(f"ERRO no ViewerWorker para VM {self.vmid}: {e}")
+            error_msg = f"ERRO no ViewerWorker: {e}"
+            print(error_msg)
             traceback.print_exc()
+            self.signals.error.emit(self.vmid, error_msg)
 
 
 class SSHWorker(QRunnable):

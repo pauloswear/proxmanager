@@ -1,6 +1,6 @@
 # widgets.py - Versão otimizada
 
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton
 )
@@ -10,16 +10,18 @@ from PyQt5.QtCore import (
 # A importação relativa do ProxmoxController garante o acesso à API
 from api import ProxmoxController 
 # Assumindo que ViewerWorker está em utils.utilities
-from utils.utilities import ViewerWorker 
+from utils.utilities import ViewerWorker
+from utils import ProcessManager
 
 
 class VMWidget(QWidget):
     """ Widget personalizado para exibir o status e ações de uma VM. """
     action_performed = pyqtSignal()
     
-    def __init__(self, vm_data: Dict[str, Any], controller: ProxmoxController):
+    def __init__(self, vm_data: Dict[str, Any], controller: ProxmoxController, process_manager: ProcessManager):
         super().__init__()
         self.controller = controller
+        self.process_manager = process_manager
         # Usamos o pool de threads global para abrir o Viewer (SPICE/VNC)
         self.threadpool = QThreadPool.globalInstance() 
         
@@ -223,9 +225,19 @@ class VMWidget(QWidget):
         is_linux = self._is_linux_vm()
         has_spice = self._has_spice_display()
         
+        # Verifica se há processo ativo para esta VM
+        has_active_process = self.process_manager.has_active_process(self.vmid)
+        active_protocol = None
+        if has_active_process:
+            process_info = self.process_manager.get_process(self.vmid)
+            if process_info:
+                active_protocol = process_info.protocol
+        
         # Botão SPICE principal laranja (aparece quando VM tem SPICE configurado)
         if is_running and has_spice:
-            self.spice_main_btn.setText("SPICE")
+            # Adiciona * se este protocolo está ativo
+            text = "SPICE*" if active_protocol == 'spice' else "SPICE"
+            self.spice_main_btn.setText(text)
             color = "#FF6B35"  # Laranja para SPICE
             hover_color = "#FF8555"
             pressed_color = "#E55525"
@@ -246,7 +258,9 @@ class VMWidget(QWidget):
         
         # Botão noVNC principal laranja (aparece quando VM está rodando MAS NÃO tem SPICE)
         if is_running and not has_spice:
-            self.novnc_main_btn.setText("noVNC")
+            # Adiciona * se este protocolo está ativo
+            text = "noVNC*" if active_protocol == 'novnc' else "noVNC"
+            self.novnc_main_btn.setText(text)
             color = "#FF6B35"  # Laranja para noVNC
             hover_color = "#FF8555"
             pressed_color = "#E55525"
@@ -267,7 +281,9 @@ class VMWidget(QWidget):
         
         # Botão RDP/SSH principal (Start, RDP para Windows, ou SSH para Linux)
         if is_running and is_windows:
-            self.connect_btn.setText("RDP")
+            # Adiciona * se RDP está ativo
+            text = "RDP*" if active_protocol == 'rdp' else "RDP"
+            self.connect_btn.setText(text)
             color = "#007ACC"  # Azul para RDP
             hover_color = "#0099FF"
             pressed_color = "#005999"
@@ -284,7 +300,9 @@ class VMWidget(QWidget):
                 }}
             """)
         elif is_running and is_linux:
-            self.connect_btn.setText("SSH")
+            # Adiciona * se SSH está ativo
+            text = "SSH*" if active_protocol == 'ssh' else "SSH"
+            self.connect_btn.setText(text)
             color = "#007ACC"  # Azul para SSH
             hover_color = "#0099FF"
             pressed_color = "#005999"
@@ -366,24 +384,69 @@ class VMWidget(QWidget):
     # --- Métodos de Clique (Ações) ---
 
     def on_ssh_clicked(self):
-        # Versão simplificada: conecta diretamente com usuário padrão
+        # Verifica se já existe processo ativo
+        if self.process_manager.has_active_process(self.vmid):
+            # Traz janela existente para frente
+            if self.process_manager.bring_to_front(self.vmid):
+                return
+        
+        # Cria novo worker e conecta sinais
         worker = ViewerWorker(self.controller, self.vmid, protocol='ssh')
+        worker.signals.finished.connect(self.on_process_started)
         self.threadpool.start(worker)
 
     def on_novnc_clicked(self):
+        # Verifica se já existe processo ativo
+        if self.process_manager.has_active_process(self.vmid):
+            # Traz janela existente para frente
+            if self.process_manager.bring_to_front(self.vmid):
+                return
+        
+        # Cria novo worker e conecta sinais
         worker = ViewerWorker(self.controller, self.vmid, protocol='novnc')
+        worker.signals.finished.connect(self.on_process_started)
         self.threadpool.start(worker)
 
     def on_spice_clicked(self):
+        # Verifica se já existe processo ativo
+        if self.process_manager.has_active_process(self.vmid):
+            # Traz janela existente para frente
+            if self.process_manager.bring_to_front(self.vmid):
+                return
+        
+        # Cria novo worker e conecta sinais
         worker = ViewerWorker(self.controller, self.vmid, protocol='spice')
+        worker.signals.finished.connect(self.on_process_started)
         self.threadpool.start(worker)
 
     def on_vnc_clicked(self):
+        # Verifica se já existe processo ativo
+        if self.process_manager.has_active_process(self.vmid):
+            # Traz janela existente para frente
+            if self.process_manager.bring_to_front(self.vmid):
+                return
+        
+        # Cria novo worker e conecta sinais
         worker = ViewerWorker(self.controller, self.vmid, protocol='vnc')
+        worker.signals.finished.connect(self.on_process_started)
         self.threadpool.start(worker)
+    
+    def on_process_started(self, vmid: int, pid: int, protocol: str):
+        """Callback quando um processo é iniciado com sucesso"""
+        # Registra o processo no gerenciador
+        self.process_manager.register_process(vmid, pid, protocol)
+        
+        # Atualiza os botões para mostrar *
+        self.update_action_buttons()
 
     def on_connect_start_clicked(self):
         if self.status == 'running':
+            # Verifica se já existe processo ativo
+            if self.process_manager.has_active_process(self.vmid):
+                # Traz janela existente para frente
+                if self.process_manager.bring_to_front(self.vmid):
+                    return
+            
             # Prioridade: RDP (Windows) > SSH (Linux) > SPICE
             if self._is_windows_vm():
                 # Windows -> RDP
@@ -397,6 +460,8 @@ class VMWidget(QWidget):
             else:
                 # Fallback -> SPICE
                 worker = ViewerWorker(self.controller, self.vmid, protocol='spice')
+            
+            worker.signals.finished.connect(self.on_process_started)
             self.threadpool.start(worker)
             
         else:

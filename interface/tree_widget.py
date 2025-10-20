@@ -177,9 +177,10 @@ class VMTreeWidget(QTreeWidget):
     drag_started = pyqtSignal()
     drag_finished = pyqtSignal()
     
-    def __init__(self, controller: ProxmoxController):
+    def __init__(self, controller: ProxmoxController, process_manager):
         super().__init__()
         self.controller = controller
+        self.process_manager = process_manager
         self.group_manager = GroupManager()
         self.dragging_item = None  # Track the item being dragged
         self.is_dragging = False   # Flag to prevent updates during drag
@@ -379,7 +380,7 @@ class VMTreeWidget(QTreeWidget):
             
             # Add VMs to group
             for vm_data in sorted_vms:
-                vm_widget = VMWidget(vm_data, self.controller)
+                vm_widget = VMWidget(vm_data, self.controller, self.process_manager)
                 vm_widget.action_performed.connect(self.vm_action_performed)
                 
                 vm_item = DraggableVMItem(vm_data, vm_widget)
@@ -940,3 +941,13 @@ class VMTreeWidget(QTreeWidget):
     def _on_hover_timeout(self):
         """Called when hover timer expires - mouse has been away for a while"""
         self.mouse_over_widget = False
+    
+    def update_all_vm_buttons(self):
+        """Atualiza os botões de todas as VMs para refletir status dos processos"""
+        root = self.invisibleRootItem()
+        for i in range(root.childCount()):
+            group_item = root.child(i)
+            for j in range(group_item.childCount()):
+                vm_item = group_item.child(j)
+                if hasattr(vm_item, 'vm_widget'):
+                    vm_item.vm_widget.update_action_buttons()

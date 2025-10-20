@@ -16,6 +16,7 @@ from .tree_widget import VMTreeWidget
 from api import ProxmoxController 
 from utils.utilities import set_dark_title_bar 
 from utils.config_manager import ConfigManager
+from utils import ProcessManager
 from .worker import Worker, WorkerSignals 
 
 
@@ -26,6 +27,9 @@ class MainWindow(QMainWindow):
         super().__init__()
         set_dark_title_bar(self.winId())
         self.controller = controller
+        
+        # Initialize process manager
+        self.process_manager = ProcessManager()
 
         # Initialize config manager
         self.config_manager = ConfigManager()
@@ -83,7 +87,19 @@ class MainWindow(QMainWindow):
         # Single timer for all updates - waits for API response
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.run_update_in_thread)
-        self.timer.start(self.timer_interval) 
+        self.timer.start(self.timer_interval)
+        
+        # Timer for cleanup of dead processes (every 5 seconds)
+        self.cleanup_timer = QTimer(self)
+        self.cleanup_timer.timeout.connect(self.cleanup_dead_processes)
+        self.cleanup_timer.start(5000)  # 5 seconds
+    
+    def cleanup_dead_processes(self):
+        """Limpa processos mortos e atualiza botões"""
+        self.process_manager.cleanup_dead_processes()
+        # Força atualização dos botões de todas as VMs
+        self.tree_widget.update_all_vm_buttons()
+ 
 
     # --------------------------------------------------------------------------
     # --- Métodos de Threading
@@ -520,7 +536,7 @@ class MainWindow(QMainWindow):
         # Add filters before the tree
         self.setup_filters()
         
-        self.tree_widget = VMTreeWidget(self.controller)
+        self.tree_widget = VMTreeWidget(self.controller, self.process_manager)
         self.tree_widget.vm_action_performed.connect(self.run_update_in_thread)
         
         # Connect drag signals to pause/resume timer

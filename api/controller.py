@@ -103,16 +103,16 @@ class ProxmoxController:
             except subprocess.CalledProcessError: return None
         return None
 
-    def start_viewer(self, vmid: Union[str, int], protocol: str = 'spice') -> bool:
+    def start_viewer(self, vmid: Union[str, int], protocol: str = 'spice') -> Optional[int]:
         """
         Inicia a conexão (SPICE ou VNC), cria e limpa o arquivo temporário.
-        Retorna True em caso de sucesso, False em caso de falha (ex: VM sem o protocolo).
+        Retorna o PID do processo em caso de sucesso, None em caso de falha.
         """
         viewer_path = self._get_remote_viewer_path()
         # Para RDP, noVNC e SSH, não precisamos do remote-viewer
         if protocol not in ['rdp', 'novnc', 'ssh'] and not viewer_path:
             print("ERRO: O executável 'remote-viewer' ou 'virt-viewer' não foi encontrado.")
-            return False
+            return None
 
         inifile_path = None
         
@@ -124,7 +124,7 @@ class ProxmoxController:
                 
                 if not config_json.get('ip'):
                     print(f"Erro: IP não disponível para VM {vmid}. Certifique-se que o guest-agent está ativo.")
-                    return False
+                    return None
                 
                 # Inicia conexão RDP usando mstsc (Windows) ou rdesktop (Linux)
                 rdp_ip = config_json['ip']
@@ -134,24 +134,27 @@ class ProxmoxController:
                     # Usa o cliente RDP nativo do Windows (mstsc)
                     rdp_args = ['mstsc', f'/v:{rdp_ip}:{rdp_port}']
                     print(f"Iniciando VM {vmid} via RDP ({rdp_ip}:{rdp_port})...")
-                    subprocess.Popen(rdp_args)
+                    process = subprocess.Popen(rdp_args)
+                    return process.pid
                 else:  # Linux/Unix
                     # Tenta usar rdesktop ou xfreerdp
                     try:
                         # Primeiro tenta xfreerdp
                         rdp_args = ['xfreerdp', f'/v:{rdp_ip}:{rdp_port}', '/cert-tofu']
-                        subprocess.Popen(rdp_args)
+                        process = subprocess.Popen(rdp_args)
+                        return process.pid
                     except FileNotFoundError:
                         try:
                             # Fallback para rdesktop
                             rdp_args = ['rdesktop', f'{rdp_ip}:{rdp_port}']
-                            subprocess.Popen(rdp_args)
+                            process = subprocess.Popen(rdp_args)
+                            return process.pid
                         except FileNotFoundError:
                             print("Erro: Cliente RDP não encontrado. Instale xfreerdp ou rdesktop.")
-                            return False
+                            return None
                     print(f"Iniciando VM {vmid} via RDP ({rdp_ip}:{rdp_port})...")
                 
-                return True
+                return None
                 
             elif protocol == 'novnc':
                 # noVNC abre no navegador web
@@ -159,7 +162,7 @@ class ProxmoxController:
                 
                 if not config_json.get('url'):
                     print(f"Erro: URL noVNC não disponível para VM {vmid}.")
-                    return False
+                    return None
                 
                 # Abre a URL do noVNC no navegador padrão
                 novnc_url = config_json['url']
@@ -167,11 +170,14 @@ class ProxmoxController:
                 
                 try:
                     import webbrowser
+                    # webbrowser.open retorna True/False, mas não dá acesso ao PID
+                    # No caso do navegador, vamos retornar um PID simbólico
                     webbrowser.open(novnc_url)
-                    return True
+                    # Retorna -vmid como identificador único para noVNC (navegador)
+                    return -abs(vmid)
                 except Exception as e:
                     print(f"Erro ao abrir noVNC no navegador: {e}")
-                    return False
+                    return None
                 
             elif protocol == 'ssh':
                 # SSH abre terminal/cliente SSH
@@ -179,7 +185,7 @@ class ProxmoxController:
                 
                 if not config_json.get('ip'):
                     print(f"Erro: IP não disponível para VM {vmid}. Certifique-se que o guest-agent está ativo.")
-                    return False
+                    return None
                 
                 ssh_ip = config_json['ip']
                 ssh_port = config_json['port']
@@ -193,13 +199,13 @@ class ProxmoxController:
                         if platform.architecture()[0] == "32bit" and os.name == "nt":
                             os.environ["PATH"] += r";C:\Windows\Sysnative\OpenSSH"
                         
-
                         # Usa start para abrir nova janela do CMD com SSH
-                        ssh_cmd = f'start "SSH - VM {vmid}" cmd /k ssh {default_user}@{ssh_ip} -P {ssh_port}'
+                        # Como os.system não retorna PID, vamos usar subprocess.Popen
+                        ssh_cmd = f'cmd /k ssh {default_user}@{ssh_ip} -P {ssh_port}'
                         print(f"Executando: {ssh_cmd}")
-                        os.system(ssh_cmd)
+                        process = subprocess.Popen(ssh_cmd, shell=True, creationflags=subprocess.CREATE_NEW_CONSOLE if os.name == 'nt' else 0)
                         print(f"SSH conectando para {default_user}@{ssh_ip}:{ssh_port}")
-                        return True
+                        return process.pid
                     except Exception as e:
                         print(f"Erro ao executar SSH: {e}")
                         
@@ -209,14 +215,14 @@ class ProxmoxController:
                             if putty_path or os.path.exists(r'C:\Program Files\PuTTY\putty.exe'):
                                 putty_exe = putty_path or r'C:\Program Files\PuTTY\putty.exe'
                                 putty_args = [putty_exe, f'{default_user}@{ssh_ip}', '-P', str(ssh_port)]
-                                subprocess.Popen(putty_args)
+                                process = subprocess.Popen(putty_args)
                                 print(f"SSH conectando via PuTTY: {putty_exe}")
-                                return True
+                                return process.pid
                         except Exception:
                             pass
                         
                         print("Erro: SSH e PuTTY não funcionaram. Verifique se o OpenSSH está instalado.")
-                        return False
+                        return None
                 else:  # Linux/Unix
                     # Usa terminal nativo
                     terminal_cmds = [
@@ -227,15 +233,15 @@ class ProxmoxController:
                     
                     for cmd in terminal_cmds:
                         try:
-                            subprocess.Popen(cmd)
-                            break
+                            process = subprocess.Popen(cmd)
+                            return process.pid
                         except FileNotFoundError:
                             continue
                     else:
                         print("Erro: Terminal não encontrado. Instale gnome-terminal, konsole ou xterm.")
-                        return False
+                        return None
                 
-                return True
+                return None
                 
             else:
                 # SPICE e VNC usam o remote-viewer
@@ -274,15 +280,19 @@ class ProxmoxController:
                 viewer_args.append(inifile_path)
                 
                 print(f"Iniciando VM {vmid} via {protocol.upper()}...")
-                subprocess.Popen(viewer_args) 
-                sleep(5) 
-                return True
+                process = subprocess.Popen(viewer_args)
+                sleep(1)  # Aguarda 1 segundo para o processo iniciar
+                return process.pid
 
         except Exception as e:
             print(f"Ocorreu um erro durante a conexão {protocol.upper()}: {e}")
-            return False
+            return None
         
         finally:
             if inifile_path and os.path.exists(inifile_path):
-                os.unlink(inifile_path)
-                # print(f"Arquivo temporário {inifile_path} removido.")
+                # Aguarda um pouco antes de remover o arquivo para garantir que foi lido
+                sleep(2)
+                try:
+                    os.unlink(inifile_path)
+                except:
+                    pass
