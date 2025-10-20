@@ -26,34 +26,72 @@ class ProcessManager:
         self.is_windows = platform.system() == 'Windows'
     
     def register_process(self, vmid: int, pid: int, protocol: str) -> None:
-        """Registra um novo processo para uma VM"""
+        """Registra um novo processo para uma VM e tenta cachear handle da janela"""
         self.processes[vmid] = ProcessInfo(pid=pid, protocol=protocol)
+        
+        # Se for Windows, tenta cachear o handle imediatamente (em background)
+        if self.is_windows:
+            # Aguarda um pouco para a janela ser criada
+            import threading
+            import time
+            
+            def cache_handle():
+                time.sleep(0.3)  # Aguarda 300ms para janela ser criada
+                try:
+                    import win32gui
+                    import win32process
+                    
+                    def callback(hwnd, windows):
+                        if win32gui.IsWindowVisible(hwnd):
+                            _, found_pid = win32process.GetWindowThreadProcessId(hwnd)
+                            if found_pid == pid:
+                                windows.append(hwnd)
+                        return True
+                    
+                    windows = []
+                    win32gui.EnumWindows(callback, windows)
+                    
+                    if windows and vmid in self.processes:
+                        self.processes[vmid].handle = windows[0]
+                except:
+                    pass
+            
+            # Executa em thread separada para não bloquear
+            thread = threading.Thread(target=cache_handle, daemon=True)
+            thread.start()
     
     def get_process(self, vmid: int) -> Optional[ProcessInfo]:
         """Obtém informações do processo de uma VM"""
         return self.processes.get(vmid)
     
     def has_active_process(self, vmid: int) -> bool:
-        """Verifica se a VM tem um processo ativo"""
-        if vmid not in self.processes:
-            return False
-        
-        process_info = self.processes[vmid]
-        return self.is_process_running(process_info.pid)
+        """Verifica se a VM tem um processo ativo (verificação rápida)"""
+        # Apenas verifica se está no dicionário
+        # A verificação de se está rodando é feita no bring_to_front
+        return vmid in self.processes
     
     def is_process_running(self, pid: int) -> bool:
         """Verifica se um processo ainda está rodando"""
         try:
             if self.is_windows:
-                # No Windows, usa tasklist para verificar se o PID existe
-                import subprocess
-                result = subprocess.run(
-                    ['tasklist', '/FI', f'PID eq {pid}', '/FO', 'CSV', '/NH'],
-                    capture_output=True,
-                    text=True,
-                    timeout=2
-                )
-                return str(pid) in result.stdout
+                # No Windows, usa método mais rápido com ctypes
+                import ctypes
+                import ctypes.wintypes
+                
+                PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+                kernel32 = ctypes.windll.kernel32
+                
+                # Tenta abrir handle do processo
+                handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+                if handle:
+                    # Verifica código de saída
+                    exit_code = ctypes.wintypes.DWORD()
+                    if kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+                        kernel32.CloseHandle(handle)
+                        # 259 (STILL_ACTIVE) significa que ainda está rodando
+                        return exit_code.value == 259
+                    kernel32.CloseHandle(handle)
+                return False
             else:
                 # No Linux/Unix, envia sinal 0 para testar se o processo existe
                 os.kill(pid, 0)
@@ -71,7 +109,29 @@ class ProcessManager:
         
         process_info = self.processes[vmid]
         
-        # Verifica se o processo ainda está rodando
+        # Se já temos um handle válido (Windows), usa diretamente
+        if self.is_windows and process_info.handle:
+            try:
+                import win32gui
+                import win32con
+                
+                # Verifica se o handle ainda é válido
+                if win32gui.IsWindow(process_info.handle):
+                    # Se está minimizado, restaura
+                    if win32gui.IsIconic(process_info.handle):
+                        win32gui.ShowWindow(process_info.handle, win32con.SW_RESTORE)
+                    
+                    # Traz para frente
+                    win32gui.SetForegroundWindow(process_info.handle)
+                    return True
+                else:
+                    # Handle inválido, limpa
+                    process_info.handle = None
+            except:
+                pass
+        
+        # Se não tem handle ou falhou, faz busca completa
+        # Mas primeiro verifica se o processo ainda está rodando
         if not self.is_process_running(process_info.pid):
             # Remove processo morto
             del self.processes[vmid]
@@ -89,6 +149,17 @@ class ProcessManager:
             import win32con
             import win32process
             
+            # Se já temos handle, tenta usar diretamente
+            if process_info.handle and win32gui.IsWindow(process_info.handle):
+                try:
+                    if win32gui.IsIconic(process_info.handle):
+                        win32gui.ShowWindow(process_info.handle, win32con.SW_RESTORE)
+                    win32gui.SetForegroundWindow(process_info.handle)
+                    return True
+                except:
+                    process_info.handle = None
+            
+            # Busca janela por PID
             def callback(hwnd, windows):
                 """Callback para enumerar janelas"""
                 if win32gui.IsWindowVisible(hwnd):
@@ -104,15 +175,23 @@ class ProcessManager:
                 # Pega a primeira janela encontrada para esse PID
                 hwnd = windows[0]
                 
+                # Cache o handle para próximas vezes
+                process_info.handle = hwnd
+                
                 # Se a janela está minimizada, restaura
                 if win32gui.IsIconic(hwnd):
                     win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
                 
-                # Traz para frente
+                # Traz para frente - usa método mais agressivo
+                win32gui.BringWindowToTop(hwnd)
                 win32gui.SetForegroundWindow(hwnd)
                 
-                # Atualiza o handle
-                process_info.handle = hwnd
+                # Força o foco
+                try:
+                    win32gui.SetActiveWindow(hwnd)
+                except:
+                    pass
+                
                 return True
             
             return False
@@ -125,29 +204,65 @@ class ProcessManager:
             return False
     
     def _bring_to_front_windows_fallback(self, process_info: ProcessInfo) -> bool:
-        """Método alternativo sem pywin32 (menos confiável)"""
+        """Método alternativo usando ctypes (mais rápido, sem pywin32)"""
         try:
-            import subprocess
+            import ctypes
+            from ctypes import wintypes
             
-            # Tenta usar PowerShell para trazer janela para frente
-            ps_script = f"""
-            $process = Get-Process -Id {process_info.pid} -ErrorAction SilentlyContinue
-            if ($process) {{
-                $process.MainWindowHandle | ForEach-Object {{
-                    [void][System.Reflection.Assembly]::LoadWithPartialName("Microsoft.VisualBasic")
-                    [Microsoft.VisualBasic.Interaction]::AppActivate($process.Id)
-                }}
-            }}
-            """
+            # Define constantes
+            SW_RESTORE = 9
+            SW_SHOW = 5
+            HWND_TOP = 0
+            SWP_SHOWWINDOW = 0x0040
             
-            subprocess.run(
-                ['powershell', '-Command', ps_script],
-                capture_output=True,
-                timeout=2
-            )
-            return True
+            # Define funções da API do Windows
+            user32 = ctypes.windll.user32
             
-        except Exception:
+            # Callback para EnumWindows
+            EnumWindowsProc = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+            
+            found_windows = []
+            
+            def enum_callback(hwnd, lparam):
+                # Verifica se janela é visível
+                if user32.IsWindowVisible(hwnd):
+                    # Get PID da janela
+                    pid = wintypes.DWORD()
+                    user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+                    
+                    if pid.value == process_info.pid:
+                        found_windows.append(hwnd)
+                return True
+            
+            # Enumera todas as janelas
+            callback = EnumWindowsProc(enum_callback)
+            user32.EnumWindows(callback, 0)
+            
+            if found_windows:
+                hwnd = found_windows[0]
+                
+                # Cache handle
+                process_info.handle = hwnd
+                
+                # Verifica se está minimizado
+                if user32.IsIconic(hwnd):
+                    user32.ShowWindow(hwnd, SW_RESTORE)
+                else:
+                    user32.ShowWindow(hwnd, SW_SHOW)
+                
+                # Traz para topo
+                user32.BringWindowToTop(hwnd)
+                user32.SetForegroundWindow(hwnd)
+                
+                # Método adicional: SetWindowPos para garantir
+                user32.SetWindowPos(hwnd, HWND_TOP, 0, 0, 0, 0, SWP_SHOWWINDOW | 0x0002 | 0x0001)
+                
+                return True
+            
+            return False
+            
+        except Exception as e:
+            print(f"Erro no fallback: {e}")
             return False
     
     def _bring_to_front_linux(self, process_info: ProcessInfo) -> bool:
