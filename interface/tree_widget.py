@@ -176,6 +176,7 @@ class VMTreeWidget(QTreeWidget):
     vm_action_performed = pyqtSignal()
     drag_started = pyqtSignal()
     drag_finished = pyqtSignal()
+    process_registered = pyqtSignal()  # Novo sinal para atualização rápida de processos
     
     def __init__(self, controller: ProxmoxController, process_manager):
         super().__init__()
@@ -382,6 +383,7 @@ class VMTreeWidget(QTreeWidget):
             for vm_data in sorted_vms:
                 vm_widget = VMWidget(vm_data, self.controller, self.process_manager)
                 vm_widget.action_performed.connect(self.vm_action_performed)
+                vm_widget.process_registered.connect(self.process_registered)
                 
                 vm_item = DraggableVMItem(vm_data, vm_widget)
                 group_item.addChild(vm_item)

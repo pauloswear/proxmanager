@@ -89,10 +89,10 @@ class MainWindow(QMainWindow):
         self.timer.timeout.connect(self.run_update_in_thread)
         self.timer.start(self.timer_interval)
         
-        # Timer for cleanup of dead processes (every 5 seconds)
+        # Timer for cleanup of dead processes (every 2 seconds - faster feedback)
         self.cleanup_timer = QTimer(self)
         self.cleanup_timer.timeout.connect(self.cleanup_dead_processes)
-        self.cleanup_timer.start(5000)  # 5 seconds
+        self.cleanup_timer.start(2000)  # 2 seconds
     
     def cleanup_dead_processes(self):
         """Limpa processos mortos e atualiza botões"""
@@ -538,12 +538,18 @@ class MainWindow(QMainWindow):
         
         self.tree_widget = VMTreeWidget(self.controller, self.process_manager)
         self.tree_widget.vm_action_performed.connect(self.run_update_in_thread)
+        self.tree_widget.process_registered.connect(self.on_process_registered)
         
         # Connect drag signals to pause/resume timer
         self.tree_widget.drag_started.connect(self.pause_timer)
         self.tree_widget.drag_finished.connect(self.resume_timer)
         
         self.main_layout.addWidget(self.tree_widget)
+    
+    def on_process_registered(self):
+        """Chamado quando um processo é registrado - atualiza botões rapidamente"""
+        # Atualiza apenas os botões de todas as VMs (sem fazer requisição API)
+        self.tree_widget.update_all_vm_buttons()
 
     def setup_filters(self):
         """Sets up the filter controls above the tree"""

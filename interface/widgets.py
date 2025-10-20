@@ -17,6 +17,7 @@ from utils import ProcessManager
 class VMWidget(QWidget):
     """ Widget personalizado para exibir o status e ações de uma VM. """
     action_performed = pyqtSignal()
+    process_registered = pyqtSignal()  # Sinal emitido quando processo é registrado
     
     def __init__(self, vm_data: Dict[str, Any], controller: ProxmoxController, process_manager: ProcessManager):
         super().__init__()
@@ -436,8 +437,11 @@ class VMWidget(QWidget):
         # Registra o processo no gerenciador
         self.process_manager.register_process(vmid, pid, protocol)
         
-        # Atualiza os botões para mostrar *
-        self.update_action_buttons()
+        # Atualiza os botões IMEDIATAMENTE para mostrar *
+        if vmid == self.vmid:
+            self.update_action_buttons()
+            # Emite sinal para outras VMs também atualizarem (caso seja necessário)
+            self.process_registered.emit()
 
     def on_connect_start_clicked(self):
         if self.status == 'running':

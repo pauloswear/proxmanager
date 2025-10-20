@@ -36,25 +36,28 @@ class ProcessManager:
             import time
             
             def cache_handle():
-                time.sleep(0.3)  # Aguarda 300ms para janela ser criada
-                try:
-                    import win32gui
-                    import win32process
-                    
-                    def callback(hwnd, windows):
-                        if win32gui.IsWindowVisible(hwnd):
-                            _, found_pid = win32process.GetWindowThreadProcessId(hwnd)
-                            if found_pid == pid:
-                                windows.append(hwnd)
-                        return True
-                    
-                    windows = []
-                    win32gui.EnumWindows(callback, windows)
-                    
-                    if windows and vmid in self.processes:
-                        self.processes[vmid].handle = windows[0]
-                except:
-                    pass
+                # Tenta múltiplas vezes com intervalos curtos
+                for attempt in range(5):  # 5 tentativas
+                    time.sleep(0.1 * (attempt + 1))  # 100ms, 200ms, 300ms, 400ms, 500ms
+                    try:
+                        import win32gui
+                        import win32process
+                        
+                        def callback(hwnd, windows):
+                            if win32gui.IsWindowVisible(hwnd):
+                                _, found_pid = win32process.GetWindowThreadProcessId(hwnd)
+                                if found_pid == pid:
+                                    windows.append(hwnd)
+                            return True
+                        
+                        windows = []
+                        win32gui.EnumWindows(callback, windows)
+                        
+                        if windows and vmid in self.processes:
+                            self.processes[vmid].handle = windows[0]
+                            break  # Sucesso! Para de tentar
+                    except:
+                        pass
             
             # Executa em thread separada para não bloquear
             thread = threading.Thread(target=cache_handle, daemon=True)
