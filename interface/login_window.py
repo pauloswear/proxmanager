@@ -262,7 +262,7 @@ class LoginWindow(QMainWindow):
             return
         
         # Mostra mensagem de conectando
-        self.connect_btn.setText("Conectando...")
+        self.connect_btn.setText("Connecting...")
         self.connect_btn.setEnabled(False)
         
         # ⭐️ O bloco try/except deve englobar TUDO o que pode falhar

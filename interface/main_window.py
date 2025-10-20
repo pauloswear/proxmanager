@@ -32,7 +32,7 @@ class MainWindow(QMainWindow):
         
         # Load configurations
         configs = self.config_manager.load_configs()
-        self.timer_interval = 500  # Atualização rápida (500ms = 0.5s)
+        self.timer_interval = 1000  
         
         # Track separate API requests
         self.metrics_running = False
@@ -115,24 +115,18 @@ class MainWindow(QMainWindow):
             
     def run_update_in_thread(self):
         """Starts separate updates for metrics and VMs - updates as they respond."""
-        import time
-        print(f"[DEBUG {time.strftime('%H:%M:%S')}] run_update_in_thread chamado")
         
         # Start metrics update if not already running
         if not self.metrics_running:
             self.metrics_running = True
-            print(f"[DEBUG {time.strftime('%H:%M:%S')}] Iniciando worker de métricas...")
             metrics_worker = Worker(self.controller.api_client.get_node_status)
             metrics_worker.signals.result.connect(self.handle_metrics_result)
             metrics_worker.signals.error.connect(self.handle_metrics_error)
             self.threadpool.start(metrics_worker)
-        else:
-            print(f"[DEBUG {time.strftime('%H:%M:%S')}] Métricas ainda rodando, pulando...")
         
         # Start VMs update if not already running - USANDO PROGRESSIVE WORKER
         if not self.vms_running:
             self.vms_running = True
-            print(f"[DEBUG {time.strftime('%H:%M:%S')}] Iniciando ProgressiveVMWorker...")
             
             from .worker import ProgressiveVMWorker
             vms_worker = ProgressiveVMWorker(self.controller.api_client)
@@ -140,8 +134,6 @@ class MainWindow(QMainWindow):
             vms_worker.signals.finished.connect(self.handle_vms_finished)
             vms_worker.signals.error.connect(self.handle_vms_error)
             self.threadpool.start(vms_worker)
-        else:
-            print(f"[DEBUG {time.strftime('%H:%M:%S')}] VMs ainda rodando, pulando...")
 
     @pyqtSlot(object)
     def handle_update_result(self, result: Optional[Tuple[Dict[str, Any], List[Dict[str, Any]]]]):
@@ -157,44 +149,25 @@ class MainWindow(QMainWindow):
     @pyqtSlot(object)
     def handle_metrics_result(self, result):
         """Handle metrics response - update immediately"""
-        import time
-        start_time = time.time()
-        print(f"[DEBUG {time.strftime('%H:%M:%S')}] handle_metrics_result recebido")
-        
         if result:
             self.update_node_metrics(result)
-        
-        elapsed = (time.time() - start_time) * 1000
-        print(f"[DEBUG {time.strftime('%H:%M:%S')}] Métricas atualizadas em {elapsed:.2f}ms")
         self.metrics_running = False
 
     @pyqtSlot(tuple)
     def handle_metrics_error(self, error):
         """Handle metrics error"""
-        import time
-        print(f"[DEBUG {time.strftime('%H:%M:%S')}] handle_metrics_error: {error}")
         self.metrics_running = False
 
     @pyqtSlot(object)
     def handle_vms_result(self, result):
         """Handle VMs response - update immediately"""
-        import time
-        start_time = time.time()
-        print(f"[DEBUG {time.strftime('%H:%M:%S')}] handle_vms_result recebido com {len(result) if result else 0} VMs")
-        
         if result:
             self.update_vms_widgets(result)
-        
-        elapsed = (time.time() - start_time) * 1000
-        print(f"[DEBUG {time.strftime('%H:%M:%S')}] VMs atualizadas em {elapsed:.2f}ms")
         self.vms_running = False
     
     @pyqtSlot(object)
     def handle_vm_progress(self, vm_data):
         """Handle individual VM as it becomes ready (progressive update)"""
-        import time
-        print(f"[DEBUG {time.strftime('%H:%M:%S')}] handle_vm_progress: VM {vm_data.get('vmid')} recebida")
-        
         # Adiciona ou atualiza a VM na lista
         vmid = vm_data.get('vmid')
         
@@ -218,8 +191,6 @@ class MainWindow(QMainWindow):
     @pyqtSlot()
     def handle_vms_finished(self):
         """Called when all VMs have been loaded"""
-        import time
-        print(f"[DEBUG {time.strftime('%H:%M:%S')}] handle_vms_finished: Todas as VMs carregadas")
         self.vms_running = False
     
     def update_vm_counts(self):
@@ -257,43 +228,27 @@ class MainWindow(QMainWindow):
 
     def get_vms_only(self):
         """Get only VMs list with detailed status"""
-        import time
-        start_time = time.time()
-        print(f"[DEBUG {time.strftime('%H:%M:%S')}] get_vms_only iniciado")
-        
         updated_vms_list = []
         try:
             # Get basic VMs list
-            api_start = time.time()
             vms_list = self.controller.api_client.get_vms_list()
-            api_elapsed = (time.time() - api_start) * 1000
-            print(f"[DEBUG {time.strftime('%H:%M:%S')}] get_vms_list() levou {api_elapsed:.2f}ms")
             
             if vms_list:
-                vm_count = len(vms_list)
-                print(f"[DEBUG {time.strftime('%H:%M:%S')}] Processando {vm_count} VMs...")
-                
-                for idx, vm in enumerate(vms_list, 1):
-                    vm_start = time.time()
+                for vm in vms_list:
                     vmid = vm.get('vmid')
                     vm_type = vm.get('type')
                     
                     if vmid is None or vm_type is None:
                         continue 
-                    
+                        
                     # Get detailed status for each VM
-                    status_start = time.time()
                     detailed_status = self.controller.api_client.get_vm_current_status(vmid, vm_type)
-                    status_elapsed = (time.time() - status_start) * 1000
                     
                     if detailed_status:
                         vm.update(detailed_status)
                     
                     # Busca ostype e vga (display type) da configuração da VM
-                    config_start = time.time()
                     vm_config = self.controller.api_client.get_vm_config(vmid, vm_type)
-                    config_elapsed = (time.time() - config_start) * 1000
-                    
                     if vm_config:
                         if 'ostype' in vm_config:
                             vm['ostype'] = vm_config['ostype']
@@ -301,29 +256,20 @@ class MainWindow(QMainWindow):
                             vm['vga'] = vm_config['vga']
                     
                     # Busca informações de rede (IP addresses) apenas se a VM estiver rodando
-                    ip_elapsed = 0
                     if vm.get('status') == 'running':
                         try:
-                            ip_start = time.time()
                             ip_addresses = self.controller.api_client.get_vm_network_info(vmid, vm_type)
-                            ip_elapsed = (time.time() - ip_start) * 1000
                             vm['ip_addresses'] = ip_addresses
                         except Exception as e:
                             vm['ip_addresses'] = []
                     else:
                         vm['ip_addresses'] = []
-                    
-                    vm_elapsed = (time.time() - vm_start) * 1000
-                    print(f"[DEBUG {time.strftime('%H:%M:%S')}] VM {vmid} ({idx}/{vm_count}): status={status_elapsed:.0f}ms, config={config_elapsed:.0f}ms, ip={ip_elapsed:.0f}ms, total={vm_elapsed:.0f}ms")
-                    
+                        
                     updated_vms_list.append(vm)
-            
-            total_elapsed = (time.time() - start_time) * 1000
-            print(f"[DEBUG {time.strftime('%H:%M:%S')}] get_vms_only concluído em {total_elapsed:.2f}ms")
+                    
             return updated_vms_list
             
         except Exception as e:
-            print(f"[DEBUG {time.strftime('%H:%M:%S')}] ERRO em get_vms_only: {e}")
             raise e
 
     @pyqtSlot(tuple)
@@ -457,18 +403,14 @@ class MainWindow(QMainWindow):
 
     def update_node_metrics(self, status_data: Optional[Dict[str, Any]]):
         """ Atualiza as métricas do Node usando dados fornecidos. """
-        import time
-        start_time = time.time()
         
         # Check if widgets still exist
         if not hasattr(self, 'system_metrics') or not self.system_metrics:
-            print(f"[DEBUG {time.strftime('%H:%M:%S')}] update_node_metrics: widget não existe")
             return
             
         try:
             if not status_data:
                 self.system_metrics.setText("CPU: -- | RAM: --")
-                print(f"[DEBUG {time.strftime('%H:%M:%S')}] update_node_metrics: sem dados")
                 return
                 
             cpu_usage = status_data.get('cpu', 0.0) * 100
@@ -493,20 +435,13 @@ class MainWindow(QMainWindow):
             metrics_html = f"<span style='color: #CCCCCC;'>CPU:</span> <span style='color: {cpu_color};'>{cpu_usage:.0f}%</span> <span style='color: #666;'>|</span> <span style='color: #CCCCCC;'>RAM:</span> <span style='color: {ram_color};'>{mem_str}</span>"
             self.system_metrics.setText(metrics_html)
             
-            elapsed = (time.time() - start_time) * 1000
-            print(f"[DEBUG {time.strftime('%H:%M:%S')}] update_node_metrics concluído em {elapsed:.2f}ms")
-            
         except RuntimeError:
             # Widget was deleted, ignore the update
-            print(f"[DEBUG {time.strftime('%H:%M:%S')}] update_node_metrics: RuntimeError (widget deletado)")
             pass
 
 
     def update_vms_widgets(self, vms_list: Optional[List[Dict[str, Any]]]):
         """Updates VM tree with status count and applies filters"""
-        import time
-        start_time = time.time()
-        print(f"[DEBUG {time.strftime('%H:%M:%S')}] update_vms_widgets iniciado com {len(vms_list) if vms_list else 0} VMs")
         
         if not vms_list:
             if hasattr(self, 'vm_counts'):
@@ -526,7 +461,6 @@ class MainWindow(QMainWindow):
                     pass
             self.unfiltered_vms_list = []
             self.apply_filters()
-            print(f"[DEBUG {time.strftime('%H:%M:%S')}] update_vms_widgets: sem VMs")
             return
 
         # Store unfiltered list for filter operations
@@ -567,12 +501,7 @@ class MainWindow(QMainWindow):
                 pass
         
         # Apply filters (this will update the tree)
-        filter_start = time.time()
         self.apply_filters()
-        filter_elapsed = (time.time() - filter_start) * 1000
-        
-        total_elapsed = (time.time() - start_time) * 1000
-        print(f"[DEBUG {time.strftime('%H:%M:%S')}] update_vms_widgets concluído: apply_filters={filter_elapsed:.2f}ms, total={total_elapsed:.2f}ms")
 
 
     # --------------------------------------------------------------------------

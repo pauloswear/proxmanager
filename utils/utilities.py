@@ -75,12 +75,10 @@ class ViewerWorker(QRunnable):
     def run(self):
         """ Lógica que será executada no thread separado. """
         try:
-            print(f"Worker: Tentando conectar via {self.protocol.upper()} para VM {self.vmid}...")
             # A chamada que bloqueia a thread principal é movida para aqui
             success = self.controller.start_viewer(self.vmid, protocol=self.protocol)
             
             if not success and self.protocol == 'spice':
-                 print(f"Worker: SPICE falhou. Tentando VNC para VM {self.vmid}...")
                  self.controller.start_viewer(self.vmid, protocol='vnc')
 
         except Exception as e:

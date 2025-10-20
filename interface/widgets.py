@@ -100,10 +100,6 @@ class VMWidget(QWidget):
         action_layout = QHBoxLayout()
         action_layout.setSpacing(8) 
         
-        self.connect_btn = QPushButton()
-        self.connect_btn.clicked.connect(self.on_connect_start_clicked)
-        action_layout.addWidget(self.connect_btn, 2) 
-        
         self.spice_main_btn = QPushButton("SPICE")
         self.spice_main_btn.clicked.connect(self.on_spice_clicked)
         action_layout.addWidget(self.spice_main_btn, 2)
@@ -111,6 +107,10 @@ class VMWidget(QWidget):
         self.novnc_main_btn = QPushButton("noVNC")
         self.novnc_main_btn.clicked.connect(self.on_novnc_clicked)
         action_layout.addWidget(self.novnc_main_btn, 2)
+        
+        self.connect_btn = QPushButton()
+        self.connect_btn.clicked.connect(self.on_connect_start_clicked)
+        action_layout.addWidget(self.connect_btn, 2) 
         
         self.ssh_btn = QPushButton("SSH")
         self.ssh_btn.clicked.connect(self.on_ssh_clicked)

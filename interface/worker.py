@@ -67,19 +67,12 @@ class ProgressiveVMWorker(QRunnable):
     @pyqtSlot()
     def run(self):
         """Carrega VMs e emite cada uma progressivamente"""
-        import time
         try:
-            print(f"[DEBUG {time.strftime('%H:%M:%S')}] ProgressiveVMWorker iniciado")
-            
             # Busca lista básica de VMs
             vms_list = self.api_client.get_vms_list()
             
             if vms_list:
-                total_vms = len(vms_list)
-                print(f"[DEBUG {time.strftime('%H:%M:%S')}] Processando {total_vms} VMs progressivamente...")
-                
-                for idx, vm in enumerate(vms_list, 1):
-                    vm_start = time.time()
+                for vm in vms_list:
                     vmid = vm.get('vmid')
                     vm_type = vm.get('type')
                     
@@ -115,16 +108,10 @@ class ProgressiveVMWorker(QRunnable):
                     else:
                         vm['ip_addresses'] = []
                     
-                    vm_elapsed = (time.time() - vm_start) * 1000
-                    print(f"[DEBUG {time.strftime('%H:%M:%S')}] VM {vmid} ({idx}/{total_vms}) processada em {vm_elapsed:.0f}ms - EMITINDO")
-                    
                     # EMITE A VM IMEDIATAMENTE
                     self.signals.progress.emit(vm)
             
-            print(f"[DEBUG {time.strftime('%H:%M:%S')}] ProgressiveVMWorker concluído")
-            
         except Exception as e:
-            print(f"[DEBUG {time.strftime('%H:%M:%S')}] ERRO em ProgressiveVMWorker: {e}")
             traceback.print_exc()
             exctype, value = sys.exc_info()[:2]
             self.signals.error.emit((exctype, value, traceback.format_exc()))
