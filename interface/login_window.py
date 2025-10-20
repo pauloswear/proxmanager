@@ -1,13 +1,87 @@
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QLineEdit, QMessageBox, QGridLayout, 
-    QDesktopWidget, QLabel, QPushButton, QCheckBox
+    QDesktopWidget, QLabel, QPushButton, QCheckBox, QProgressBar
 )
-from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal
 from PyQt5.QtGui import QFont
 from utils.config_manager import ConfigManager
 from api import ProxmoxAPIClient, ViewerConfigGenerator, ProxmoxController
 from utils import set_dark_title_bar
 from .main_window import MainWindow 
+
+
+class LoadingWorker(QThread):
+    """Thread para carregar dados iniciais sem travar a UI"""
+    finished = pyqtSignal(object, object)  # Emite (node_data, vms_list)
+    error = pyqtSignal(str)  # Emite mensagem de erro
+    
+    def __init__(self, controller):
+        super().__init__()
+        self.controller = controller
+    
+    def run(self):
+        try:
+            # Carrega apenas os DADOS em thread (não cria widgets)
+            node_data = None
+            vms_list = None
+            
+            try:
+                node_data = self.controller.api_client.get_node_status()
+            except:
+                pass
+            
+            try:
+                # Usa o mesmo método que a MainWindow usa
+                vms_list = []
+                raw_vms = self.controller.api_client.get_vms_list()
+                
+                if raw_vms:
+                    for vm in raw_vms:
+                        vmid = vm.get('vmid')
+                        vm_type = vm.get('type')
+                        
+                        if vmid is None or vm_type is None:
+                            continue
+                        
+                        # Get detailed status
+                        try:
+                            detailed_status = self.controller.api_client.get_vm_current_status(vmid, vm_type)
+                            if detailed_status:
+                                vm.update(detailed_status)
+                        except:
+                            pass
+                        
+                        # Get config
+                        try:
+                            vm_config = self.controller.api_client.get_vm_config(vmid, vm_type)
+                            if vm_config:
+                                if 'ostype' in vm_config:
+                                    vm['ostype'] = vm_config['ostype']
+                                if 'vga' in vm_config:
+                                    vm['vga'] = vm_config['vga']
+                        except:
+                            pass
+                        
+                        # Get IPs
+                        if vm.get('status') == 'running':
+                            try:
+                                ip_addresses = self.controller.api_client.get_vm_network_info(vmid, vm_type)
+                                vm['ip_addresses'] = ip_addresses
+                            except:
+                                vm['ip_addresses'] = []
+                        else:
+                            vm['ip_addresses'] = []
+                        
+                        vms_list.append(vm)
+                        
+            except Exception as e:
+                raise Exception(f"Erro ao carregar VMs: {e}")
+            
+            # Emite os dados carregados
+            self.finished.emit(node_data, vms_list)
+            
+        except Exception as e:
+            self.error.emit(str(e))
 
 
 class LoginWindow(QMainWindow):
@@ -29,6 +103,9 @@ class LoginWindow(QMainWindow):
         self.setCentralWidget(self.main_widget)
         self.layout = QVBoxLayout(self.main_widget)
         self.layout.setAlignment(Qt.AlignCenter)
+        
+        self.loading_worker = None
+        self.progress_bar = None
         
         self.setup_ui()
         
@@ -195,14 +272,17 @@ class LoginWindow(QMainWindow):
             config_generator = ViewerConfigGenerator(host_ip=host_ip)
             controller = ProxmoxController(api_client, config_generator)
             
-            # 5. Abre a janela principal (só se tudo estiver ok)
-            try:
-                self.main_window = MainWindow(controller)
-                self.main_window.show()
-                # Aguarda um pouco antes de fechar a janela de login
-                QTimer.singleShot(100, self.close)
-            except Exception as main_window_error:
-                raise Exception(f"Erro ao criar janela principal: {main_window_error}")
+            # 5. Salva o controller para usar depois
+            self.pending_controller = controller
+            
+            # 6. Mostra loading e inicia thread de carregamento
+            self.show_loading()
+            
+            # 7. Cria worker thread para carregar APENAS DADOS
+            self.loading_worker = LoadingWorker(controller)
+            self.loading_worker.finished.connect(self.on_loading_finished)
+            self.loading_worker.error.connect(self.on_loading_error)
+            self.loading_worker.start()
             
         except Exception as e:
             # ⭐️ Tratamento de erro ⭐️
@@ -225,3 +305,58 @@ class LoginWindow(QMainWindow):
             except RuntimeError:
                 # Se a janela foi destruída, imprime no console
                 print(f"Connection error: {e}")
+    
+    def show_loading(self):
+        """Mostra barra de progresso durante carregamento"""
+        if self.progress_bar is None:
+            self.progress_bar = QProgressBar()
+            self.progress_bar.setRange(0, 0)  # Modo indeterminado
+            self.progress_bar.setStyleSheet("""
+                QProgressBar {
+                    border: 2px solid #444;
+                    border-radius: 5px;
+                    text-align: center;
+                    background-color: #2D2D2D;
+                }
+                QProgressBar::chunk {
+                    background-color: #00A3CC;
+                }
+            """)
+            self.layout.addWidget(self.progress_bar)
+        
+        self.progress_bar.setVisible(True)
+        self.connect_btn.setEnabled(False)
+    
+    def hide_loading(self):
+        """Esconde barra de progresso"""
+        if self.progress_bar:
+            self.progress_bar.setVisible(False)
+    
+    def on_loading_finished(self, node_data, vms_list):
+        """Chamado quando o carregamento termina com sucesso"""
+        self.hide_loading()
+        
+        try:
+            # Agora cria a MainWindow na thread principal (seguro)
+            self.main_window = MainWindow(self.pending_controller)
+            
+            # Popula com os dados já carregados
+            if node_data:
+                self.main_window.update_node_metrics(node_data)
+            if vms_list:
+                self.main_window.update_vms_widgets(vms_list)
+            
+            # Mostra a janela
+            self.main_window.show()
+            QTimer.singleShot(100, self.close)
+            
+        except Exception as e:
+            self.on_loading_error(str(e))
+    
+    def on_loading_error(self, error_msg):
+        """Chamado quando ocorre erro no carregamento"""
+        self.hide_loading()
+        self.connect_btn.setText("Connect")
+        self.connect_btn.setEnabled(True)
+        QMessageBox.critical(self, "Loading Failed", 
+                           f"Unable to load dashboard.\n\nError Details: {error_msg}")

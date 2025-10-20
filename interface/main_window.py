@@ -78,7 +78,7 @@ class MainWindow(QMainWindow):
         # Load geometry after all UI is setup (delayed to ensure proper rendering)
         QTimer.singleShot(50, self.load_geometry)
         
-        self.initial_load()
+        # Don't call initial_load here - it will be called from LoginWindow
         
         # Single timer for all updates - waits for API response
         self.timer = QTimer(self)
