@@ -4,7 +4,7 @@ from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
     QScrollArea, QDesktopWidget, QPushButton, QMessageBox, 
     QLineEdit, QComboBox, QFrame, QSizePolicy, QDialog, 
-    QDialogButtonBox, QFormLayout, QGroupBox, QCheckBox
+    QDialogButtonBox, QFormLayout, QGroupBox, QCheckBox, QTabWidget
 )
 from PyQt5.QtCore import (
     Qt, QTimer, QSize, QThreadPool, pyqtSlot, QPoint, QPropertyAnimation, QRect, QEasingCurve
@@ -70,12 +70,14 @@ class MainWindow(QMainWindow):
         self.current_search_text = ""
         self.current_status_filter = "ALL"
         self.unfiltered_vms_list = []  # Store original VM list
+        self.current_view_mode = "all"  # "all" ou "active"
         
         # Search menu state
         self.search_expanded = False  # Start collapsed
         self.search_animation = None
 
         self.setup_header()
+        self.setup_tabs()
         self.setup_tree_view()
         self.setup_footer() 
         
@@ -99,6 +101,17 @@ class MainWindow(QMainWindow):
         self.process_manager.cleanup_dead_processes()
         # Força atualização dos botões de todas as VMs
         self.tree_widget.update_all_vm_buttons()
+        # Atualiza contador de conexões ativas
+        self.update_active_connections_count()
+    
+    def update_active_connections_count(self):
+        """Atualiza o contador de conexões ativas no botão"""
+        count = len(self.process_manager.processes)
+        self.active_connections_btn.setText(f"Active Connections ({count})")
+        
+        # Se está na visualização de conexões ativas, reaplica o filtro
+        if self.current_view_mode == "active":
+            self.apply_filters()
  
 
     # --------------------------------------------------------------------------
@@ -326,7 +339,8 @@ class MainWindow(QMainWindow):
         """Check if any filters are currently active"""
         return (
             bool(self.current_search_text) or 
-            self.current_status_filter != "ALL"
+            self.current_status_filter != "ALL" or
+            self.current_view_mode == "active"
         )
     
     def clear_filters(self):
@@ -392,13 +406,25 @@ class MainWindow(QMainWindow):
                 (self.current_status_filter == "STOPPED" and vm_status != "RUNNING")
             )
             
-            if search_match and status_match:
+            # Apply active connections filter
+            vmid = vm.get('vmid')
+            active_match = (
+                self.current_view_mode == "all" or
+                (self.current_view_mode == "active" and self.process_manager.has_active_process(vmid))
+            )
+            
+            if search_match and status_match and active_match:
                 filtered_vms.append(vm)
         
         # Update results count
         total_count = len(self.unfiltered_vms_list)
         filtered_count = len(filtered_vms)
-        if filtered_count == total_count:
+        
+        # Se está no modo "active", mostra quantas conexões ativas
+        if self.current_view_mode == "active":
+            active_count = len(self.process_manager.processes)
+            self.results_label.setText(f"{filtered_count} active connections")
+        elif filtered_count == total_count:
             self.results_label.setText(f"{total_count} servers")
         else:
             self.results_label.setText(f"{filtered_count} of {total_count} servers")
@@ -530,6 +556,83 @@ class MainWindow(QMainWindow):
         title_label.setAlignment(Qt.AlignCenter)
         title_label.setStyleSheet("color: #00A3CC; margin-bottom: 10px; padding: 5px;") 
         self.main_layout.addWidget(title_label)
+    
+    def setup_tabs(self):
+        """Cria abas para alternar entre todas VMs e apenas conexões ativas"""
+        tabs_container = QWidget()
+        tabs_layout = QHBoxLayout(tabs_container)
+        tabs_layout.setContentsMargins(5, 5, 5, 0)
+        tabs_layout.setSpacing(5)
+        
+        # Botão "All VMs"
+        self.all_vms_btn = QPushButton("All VMs")
+        self.all_vms_btn.setCheckable(True)
+        self.all_vms_btn.setChecked(True)
+        self.all_vms_btn.clicked.connect(lambda: self.switch_view_mode("all"))
+        self.all_vms_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #00A3CC;
+                color: white;
+                border: none;
+                border-radius: 5px;
+                padding: 8px 20px;
+                font-size: 10pt;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #00BFFF;
+            }
+            QPushButton:checked {
+                background-color: #00A3CC;
+            }
+            QPushButton:!checked {
+                background-color: #383838;
+                color: #AAAAAA;
+            }
+        """)
+        
+        # Botão "Active Connections" com contador integrado
+        self.active_connections_btn = QPushButton("Active Connections (0)")
+        self.active_connections_btn.setCheckable(True)
+        self.active_connections_btn.clicked.connect(lambda: self.switch_view_mode("active"))
+        self.active_connections_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #FF6B35;
+                color: white;
+                border: none;
+                border-radius: 5px;
+                padding: 8px 20px;
+                font-size: 10pt;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #FF8555;
+            }
+            QPushButton:checked {
+                background-color: #FF6B35;
+            }
+            QPushButton:!checked {
+                background-color: #383838;
+                color: #AAAAAA;
+            }
+        """)
+        
+        tabs_layout.addWidget(self.all_vms_btn)
+        tabs_layout.addWidget(self.active_connections_btn)
+        tabs_layout.addStretch()
+        
+        self.main_layout.addWidget(tabs_container)
+    
+    def switch_view_mode(self, mode: str):
+        """Alterna entre visualização de todas VMs e apenas conexões ativas"""
+        self.current_view_mode = mode
+        
+        # Atualiza estado dos botões
+        self.all_vms_btn.setChecked(mode == "all")
+        self.active_connections_btn.setChecked(mode == "active")
+        
+        # Aplica filtro
+        self.apply_filters()
 
     def setup_tree_view(self):
         """Configures the tree widget for VM groups"""
@@ -547,9 +650,11 @@ class MainWindow(QMainWindow):
         self.main_layout.addWidget(self.tree_widget)
     
     def on_process_registered(self):
-        """Chamado quando um processo é registrado - atualiza botões rapidamente"""
+        """Chamado quando um processo é registrado - atualiza botões e contador"""
         # Atualiza apenas os botões de todas as VMs (sem fazer requisição API)
         self.tree_widget.update_all_vm_buttons()
+        # Atualiza contador de conexões ativas
+        self.update_active_connections_count()
 
     def setup_filters(self):
         """Sets up the filter controls above the tree"""
