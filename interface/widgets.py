@@ -384,16 +384,16 @@ class VMWidget(QWidget):
 
     def on_connect_start_clicked(self):
         if self.status == 'running':
-            # Prioridade: SPICE > RDP (Windows) > SSH (Linux)
-            if self._has_spice_display():
-                # VM com SPICE configurado -> SPICE
-                worker = ViewerWorker(self.controller, self.vmid, protocol='spice')
-            elif self._is_windows_vm():
+            # Prioridade: RDP (Windows) > SSH (Linux) > SPICE
+            if self._is_windows_vm():
                 # Windows -> RDP
                 worker = ViewerWorker(self.controller, self.vmid, protocol='rdp')
             elif self._is_linux_vm():
                 # Linux -> SSH
                 worker = ViewerWorker(self.controller, self.vmid, protocol='ssh')
+            elif self._has_spice_display():
+                # VM com SPICE configurado -> SPICE
+                worker = ViewerWorker(self.controller, self.vmid, protocol='spice')
             else:
                 # Fallback -> SPICE
                 worker = ViewerWorker(self.controller, self.vmid, protocol='spice')
