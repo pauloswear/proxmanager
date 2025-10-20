@@ -18,7 +18,11 @@ A native desktop application built with **Python** and **PyQt5** for quick monit
 - [ ] **Asynchronous Action Indicators**  
   Add visual feedback (like a spinner) to buttons when executing VM actions (*Start*, *Stop*, *Reboot*) to improve the user experience.
   
+- [ ] **Tab for open VMs**
+Add a vertical tab (like in VMware Workstation) allowing you to bring the SSH, SPICE, openVNC, or RDP process to the foreground
 
+- [ ] **Get ticket for noVNC**
+Get the ticket for noVNC, allowing you to access the VM via noVNC without having to log in to the Proxmox webui first
 
 ---
 

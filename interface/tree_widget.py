@@ -417,6 +417,29 @@ class VMTreeWidget(QTreeWidget):
         self.blockSignals(False)
         self.setUpdatesEnabled(True)
     
+    def update_single_vm(self, vm_data: Dict[str, Any]):
+        """Updates a single VM widget without rebuilding the entire tree"""
+        vmid = vm_data.get('vmid')
+        
+        # Find the VM item in the tree
+        for group_idx in range(self.topLevelItemCount()):
+            group_item = self.topLevelItem(group_idx)
+            
+            for vm_idx in range(group_item.childCount()):
+                vm_item = group_item.child(vm_idx)
+                
+                if isinstance(vm_item, DraggableVMItem):
+                    existing_vmid = vm_item.vm_data.get('vmid')
+                    
+                    if existing_vmid == vmid:
+                        # Found the VM, update its widget
+                        vm_widget = self.itemWidget(vm_item, 0)
+                        if isinstance(vm_widget, VMWidget):
+                            vm_widget.update_data(vm_data)
+                        return
+        
+        # VM not found in tree, might be new - do nothing (será adicionada no próximo update completo)
+    
     def _sort_vms_in_group(self, vms: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Sorts VMs within a group by status (running first) then alphabetically"""
         def sort_key(vm: Dict[str, Any]):

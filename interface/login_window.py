@@ -19,60 +19,78 @@ class LoadingWorker(QThread):
         super().__init__()
         self.controller = controller
     
+    def load_vm_data(self, vm):
+        """Carrega dados de uma VM individual (executado em paralelo)"""
+        vmid = vm.get('vmid')
+        vm_type = vm.get('type')
+        
+        if vmid is None or vm_type is None:
+            return None
+        
+        # Get detailed status
+        try:
+            detailed_status = self.controller.api_client.get_vm_current_status(vmid, vm_type)
+            if detailed_status:
+                vm.update(detailed_status)
+        except:
+            pass
+        
+        # Get config
+        try:
+            vm_config = self.controller.api_client.get_vm_config(vmid, vm_type)
+            if vm_config:
+                if 'ostype' in vm_config:
+                    vm['ostype'] = vm_config['ostype']
+                if 'vga' in vm_config:
+                    vm['vga'] = vm_config['vga']
+        except:
+            pass
+        
+        # Get IPs
+        if vm.get('status') == 'running':
+            try:
+                ip_addresses = self.controller.api_client.get_vm_network_info(vmid, vm_type)
+                vm['ip_addresses'] = ip_addresses
+            except:
+                vm['ip_addresses'] = []
+        else:
+            vm['ip_addresses'] = []
+        
+        return vm
+    
     def run(self):
         try:
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+            
             # Carrega apenas os DADOS em thread (não cria widgets)
             node_data = None
-            vms_list = None
+            vms_list = []
             
+            # Carrega métricas do node
             try:
                 node_data = self.controller.api_client.get_node_status()
             except:
                 pass
             
+            # Carrega lista básica de VMs
             try:
-                # Usa o mesmo método que a MainWindow usa
-                vms_list = []
                 raw_vms = self.controller.api_client.get_vms_list()
                 
                 if raw_vms:
-                    for vm in raw_vms:
-                        vmid = vm.get('vmid')
-                        vm_type = vm.get('type')
+                    # Usa ThreadPoolExecutor para carregar dados de VMs em paralelo
+                    with ThreadPoolExecutor(max_workers=10) as executor:
+                        # Submete todas as VMs para processamento paralelo
+                        future_to_vm = {executor.submit(self.load_vm_data, vm): vm for vm in raw_vms}
                         
-                        if vmid is None or vm_type is None:
-                            continue
-                        
-                        # Get detailed status
-                        try:
-                            detailed_status = self.controller.api_client.get_vm_current_status(vmid, vm_type)
-                            if detailed_status:
-                                vm.update(detailed_status)
-                        except:
-                            pass
-                        
-                        # Get config
-                        try:
-                            vm_config = self.controller.api_client.get_vm_config(vmid, vm_type)
-                            if vm_config:
-                                if 'ostype' in vm_config:
-                                    vm['ostype'] = vm_config['ostype']
-                                if 'vga' in vm_config:
-                                    vm['vga'] = vm_config['vga']
-                        except:
-                            pass
-                        
-                        # Get IPs
-                        if vm.get('status') == 'running':
+                        # Coleta resultados conforme vão ficando prontos
+                        for future in as_completed(future_to_vm):
                             try:
-                                ip_addresses = self.controller.api_client.get_vm_network_info(vmid, vm_type)
-                                vm['ip_addresses'] = ip_addresses
-                            except:
-                                vm['ip_addresses'] = []
-                        else:
-                            vm['ip_addresses'] = []
-                        
-                        vms_list.append(vm)
+                                vm_data = future.result()
+                                if vm_data:
+                                    vms_list.append(vm_data)
+                            except Exception as e:
+                                # Se uma VM falhar, continua com as outras
+                                pass
                         
             except Exception as e:
                 raise Exception(f"Erro ao carregar VMs: {e}")
