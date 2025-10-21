@@ -934,6 +934,13 @@ class MainWindow(QMainWindow):
         self.search_sidebar_btn.clicked.connect(self.toggle_search_menu)
         sidebar_layout.addWidget(self.search_sidebar_btn)
         
+        # Connect All SPICE button
+        self.connect_all_spice_btn = QPushButton("🖥️")
+        self.connect_all_spice_btn.setStyleSheet(self._get_sidebar_icon_style())
+        self.connect_all_spice_btn.setToolTip("Connect All SPICE VMs (Background)")
+        self.connect_all_spice_btn.clicked.connect(self.connect_all_spice_vms)
+        sidebar_layout.addWidget(self.connect_all_spice_btn)
+        
         # Add spacer
         sidebar_layout.addStretch()
         
@@ -1111,6 +1118,62 @@ class MainWindow(QMainWindow):
     # --------------------------------------------------------------------------
     # --- Métodos do Sidebar
     # --------------------------------------------------------------------------
+    
+    def connect_all_spice_vms(self):
+        """Connect to all VMs that support SPICE in background"""
+        if not hasattr(self, 'unfiltered_vms_list') or not self.unfiltered_vms_list:
+            return
+        
+        # Filter VMs that support SPICE (have QXL display) and are running
+        spice_vms = []
+        for vm in self.unfiltered_vms_list:
+            if vm.get('status') != 'running':
+                continue
+            
+            vmid = vm.get('vmid')
+            vm_type = vm.get('type')
+            
+            # Check if VM has SPICE support (QXL display)
+            vm_config = self.controller.api_client.get_vm_config(vmid, vm_type)
+            if vm_config and 'vga' in vm_config:
+                vga_type = vm_config.get('vga', '').lower()
+                if 'qxl' in vga_type:
+                    spice_vms.append(vm)
+        
+        if not spice_vms:
+            return
+        
+        # Connect to all SPICE VMs without confirmation
+        connected = 0
+        failed = 0
+        
+        for vm in spice_vms:
+            vmid = vm.get('vmid')
+            vm_name = vm.get('name', f'VM {vmid}')
+            
+            # Check if already connected (any protocol)
+            if self.process_manager.has_active_process(vmid):
+                print(f"VM {vmid} ({vm_name}) already has an active connection, skipping...")
+                continue
+            
+            try:
+                # Start SPICE connection in background
+                pid = self.controller.start_viewer(vmid, protocol='spice', background=True)
+                if pid:
+                    # Register the process
+                    self.process_manager.register_process(vmid, pid, 'spice')
+                    connected += 1
+                    print(f"Connected to VM {vmid} ({vm_name}) via SPICE (PID: {pid})")
+                else:
+                    failed += 1
+                    print(f"Failed to connect to VM {vmid} ({vm_name})")
+            except Exception as e:
+                failed += 1
+                print(f"Error connecting to VM {vmid} ({vm_name}): {e}")
+        
+        # Update UI to reflect new connections
+        if hasattr(self, 'vm_tree'):
+            self.vm_tree.update_all_vm_buttons()
 
     def logout(self):
         """Logout and return to login window"""

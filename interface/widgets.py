@@ -229,15 +229,21 @@ class VMWidget(QWidget):
         # Verifica se há processo ativo para esta VM
         has_active_process = self.process_manager.has_active_process(self.vmid)
         active_protocol = None
+        is_minimized = False
         if has_active_process:
             process_info = self.process_manager.get_process(self.vmid)
             if process_info:
                 active_protocol = process_info.protocol
+                # Verifica se está minimizado
+                is_minimized = self.process_manager.is_window_minimized(self.vmid)
         
         # Botão SPICE principal laranja (aparece quando VM tem SPICE configurado)
         if is_running and has_spice:
-            # Adiciona * se este protocolo está ativo
-            text = "SPICE*" if active_protocol == 'spice' else "SPICE"
+            # Usa (+) se minimizado, (-) se em primeiro plano, nada se não ativo
+            if active_protocol == 'spice':
+                text = "SPICE (+)" if is_minimized else "SPICE (-)"
+            else:
+                text = "SPICE"
             self.spice_main_btn.setText(text)
             color = "#FF6B35"  # Laranja para SPICE
             hover_color = "#FF8555"
@@ -259,8 +265,11 @@ class VMWidget(QWidget):
         
         # Botão noVNC principal laranja (aparece quando VM está rodando MAS NÃO tem SPICE)
         if is_running and not has_spice:
-            # Adiciona * se este protocolo está ativo
-            text = "noVNC*" if active_protocol == 'novnc' else "noVNC"
+            # Usa (+) se minimizado, (-) se em primeiro plano, nada se não ativo
+            if active_protocol == 'novnc':
+                text = "noVNC (+)" if is_minimized else "noVNC (-)"
+            else:
+                text = "noVNC"
             self.novnc_main_btn.setText(text)
             color = "#FF6B35"  # Laranja para noVNC
             hover_color = "#FF8555"
@@ -282,8 +291,11 @@ class VMWidget(QWidget):
         
         # Botão RDP/SSH principal (Start, RDP para Windows, ou SSH para Linux)
         if is_running and is_windows:
-            # Adiciona * se RDP está ativo
-            text = "RDP*" if active_protocol == 'rdp' else "RDP"
+            # Usa (+) se minimizado, (-) se em primeiro plano, nada se não ativo
+            if active_protocol == 'rdp':
+                text = "RDP (+)" if is_minimized else "RDP (-)"
+            else:
+                text = "RDP"
             self.connect_btn.setText(text)
             color = "#007ACC"  # Azul para RDP
             hover_color = "#0099FF"
@@ -301,8 +313,11 @@ class VMWidget(QWidget):
                 }}
             """)
         elif is_running and is_linux:
-            # Adiciona * se SSH está ativo
-            text = "SSH*" if active_protocol == 'ssh' else "SSH"
+            # Usa (+) se minimizado, (-) se em primeiro plano, nada se não ativo
+            if active_protocol == 'ssh':
+                text = "SSH (+)" if is_minimized else "SSH (-)"
+            else:
+                text = "SSH"
             self.connect_btn.setText(text)
             color = "#007ACC"  # Azul para SSH
             hover_color = "#0099FF"
@@ -399,9 +414,9 @@ class VMWidget(QWidget):
     def on_novnc_clicked(self):
         # Verifica se já existe processo ativo
         if self.process_manager.has_active_process(self.vmid):
-            # Traz janela existente para frente
-            if self.process_manager.bring_to_front(self.vmid):
-                return
+            # noVNC abre no navegador, então não podemos minimizar/maximizar
+            # Apenas abre novamente (nova aba)
+            pass
         
         # Cria novo worker e conecta sinais
         worker = ViewerWorker(self.controller, self.vmid, protocol='novnc')
@@ -411,9 +426,19 @@ class VMWidget(QWidget):
     def on_spice_clicked(self):
         # Verifica se já existe processo ativo
         if self.process_manager.has_active_process(self.vmid):
-            # Traz janela existente para frente
-            if self.process_manager.bring_to_front(self.vmid):
-                return
+            # Verifica se está minimizado
+            is_minimized = self.process_manager.is_window_minimized(self.vmid)
+            
+            if is_minimized:
+                # Se minimizado (+), traz para frente
+                self.process_manager.bring_to_front(self.vmid)
+            else:
+                # Se em primeiro plano (-), minimiza
+                self.process_manager.minimize_window(self.vmid)
+            
+            # Atualiza botões para refletir novo estado
+            self.update_action_buttons()
+            return
         
         # Cria novo worker e conecta sinais
         worker = ViewerWorker(self.controller, self.vmid, protocol='spice')
@@ -423,9 +448,19 @@ class VMWidget(QWidget):
     def on_vnc_clicked(self):
         # Verifica se já existe processo ativo
         if self.process_manager.has_active_process(self.vmid):
-            # Traz janela existente para frente
-            if self.process_manager.bring_to_front(self.vmid):
-                return
+            # Verifica se está minimizado
+            is_minimized = self.process_manager.is_window_minimized(self.vmid)
+            
+            if is_minimized:
+                # Se minimizado (+), traz para frente
+                self.process_manager.bring_to_front(self.vmid)
+            else:
+                # Se em primeiro plano (-), minimiza
+                self.process_manager.minimize_window(self.vmid)
+            
+            # Atualiza botões para refletir novo estado
+            self.update_action_buttons()
+            return
         
         # Cria novo worker e conecta sinais
         worker = ViewerWorker(self.controller, self.vmid, protocol='vnc')
@@ -447,9 +482,19 @@ class VMWidget(QWidget):
         if self.status == 'running':
             # Verifica se já existe processo ativo
             if self.process_manager.has_active_process(self.vmid):
-                # Traz janela existente para frente
-                if self.process_manager.bring_to_front(self.vmid):
-                    return
+                # Verifica se está minimizado
+                is_minimized = self.process_manager.is_window_minimized(self.vmid)
+                
+                if is_minimized:
+                    # Se minimizado (+), traz para frente
+                    self.process_manager.bring_to_front(self.vmid)
+                else:
+                    # Se em primeiro plano (-), minimiza
+                    self.process_manager.minimize_window(self.vmid)
+                
+                # Atualiza botões para refletir novo estado
+                self.update_action_buttons()
+                return
             
             # Prioridade: RDP (Windows) > SSH (Linux) > SPICE
             if self._is_windows_vm():

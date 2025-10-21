@@ -332,3 +332,111 @@ class ProcessManager:
         
         for vmid in dead_vmids:
             del self.processes[vmid]
+    
+    def is_window_minimized(self, vmid: int) -> bool:
+        """
+        Verifica se a janela do processo está minimizada.
+        Retorna True se minimizada, False se não ou se não conseguiu verificar.
+        """
+        if vmid not in self.processes:
+            return False
+        
+        process_info = self.processes[vmid]
+        
+        if not self.is_windows:
+            return False  # Por enquanto, só Windows
+        
+        # Tenta usar handle cacheado
+        if process_info.handle:
+            try:
+                import win32gui
+                if win32gui.IsWindow(process_info.handle):
+                    return win32gui.IsIconic(process_info.handle)
+            except:
+                pass
+        
+        # Fallback: busca janela por PID
+        try:
+            import ctypes
+            from ctypes import wintypes
+            
+            user32 = ctypes.windll.user32
+            minimized = [False]
+            found = [False]
+            
+            def enum_callback(hwnd, _):
+                if user32.IsWindowVisible(hwnd):
+                    pid = wintypes.DWORD()
+                    user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+                    if pid.value == process_info.pid:
+                        found[0] = True
+                        minimized[0] = bool(user32.IsIconic(hwnd))
+                        # Cache o handle
+                        process_info.handle = hwnd
+                        return False  # Para enumeração
+                return True
+            
+            EnumWindowsProc = ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
+            callback = EnumWindowsProc(enum_callback)
+            user32.EnumWindows(callback, 0)
+            
+            return minimized[0] if found[0] else False
+            
+        except Exception as e:
+            return False
+    
+    def minimize_window(self, vmid: int) -> bool:
+        """
+        Minimiza a janela do processo.
+        Retorna True se conseguiu, False caso contrário.
+        """
+        if vmid not in self.processes:
+            return False
+        
+        process_info = self.processes[vmid]
+        
+        if not self.is_windows:
+            return False  # Por enquanto, só Windows
+        
+        # Tenta usar handle cacheado
+        if process_info.handle:
+            try:
+                import win32gui
+                import win32con
+                if win32gui.IsWindow(process_info.handle):
+                    win32gui.ShowWindow(process_info.handle, win32con.SW_MINIMIZE)
+                    return True
+            except:
+                pass
+        
+        # Fallback: busca janela por PID e minimiza
+        try:
+            import ctypes
+            from ctypes import wintypes
+            
+            user32 = ctypes.windll.user32
+            SW_MINIMIZE = 6
+            success = [False]
+            
+            def enum_callback(hwnd, _):
+                if user32.IsWindowVisible(hwnd):
+                    pid = wintypes.DWORD()
+                    user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+                    if pid.value == process_info.pid:
+                        # Minimiza
+                        user32.ShowWindow(hwnd, SW_MINIMIZE)
+                        # Cache o handle
+                        process_info.handle = hwnd
+                        success[0] = True
+                        return False  # Para enumeração
+                return True
+            
+            EnumWindowsProc = ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
+            callback = EnumWindowsProc(enum_callback)
+            user32.EnumWindows(callback, 0)
+            
+            return success[0]
+            
+        except Exception as e:
+            return False
+

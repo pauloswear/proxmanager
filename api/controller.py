@@ -103,10 +103,15 @@ class ProxmoxController:
             except subprocess.CalledProcessError: return None
         return None
 
-    def start_viewer(self, vmid: Union[str, int], protocol: str = 'spice') -> Optional[int]:
+    def start_viewer(self, vmid: Union[str, int], protocol: str = 'spice', background: bool = False) -> Optional[int]:
         """
         Inicia a conexão (SPICE ou VNC), cria e limpa o arquivo temporário.
         Retorna o PID do processo em caso de sucesso, None em caso de falha.
+        
+        Args:
+            vmid: ID da VM
+            protocol: Protocolo a usar ('spice', 'vnc', 'rdp', 'novnc', 'ssh')
+            background: Se True, abre a janela minimizada/em background (apenas SPICE/VNC/RDP)
         """
         viewer_path = self._get_remote_viewer_path()
         # Para RDP, noVNC e SSH, não precisamos do remote-viewer
@@ -199,13 +204,22 @@ class ProxmoxController:
                         if platform.architecture()[0] == "32bit" and os.name == "nt":
                             os.environ["PATH"] += r";C:\Windows\Sysnative\OpenSSH"
                         
-                        # Usa start para abrir nova janela do CMD com SSH
-                        # Como os.system não retorna PID, vamos usar subprocess.Popen
-                        ssh_cmd = f'cmd /k ssh {default_user}@{ssh_ip} -P {ssh_port}'
-                        print(f"Executando: {ssh_cmd}")
-                        process = subprocess.Popen(ssh_cmd, shell=True, creationflags=subprocess.CREATE_NEW_CONSOLE if os.name == 'nt' else 0)
-                        print(f"SSH conectando para {default_user}@{ssh_ip}:{ssh_port}")
+                        # Abre CMD diretamente com o comando SSH
+                        ssh_args = [
+                            'cmd.exe',
+                            '/k',  # Mantém janela aberta após comando
+                            f'title SSH - VM {vmid} && ssh {default_user}@{ssh_ip} -P {ssh_port}'
+                        ]
+                        
+                        print(f"Abrindo SSH para {default_user}@{ssh_ip}:{ssh_port}...")
+                        process = subprocess.Popen(
+                            ssh_args,
+                            creationflags=subprocess.CREATE_NEW_CONSOLE
+                        )
+                        
+                        print(f"SSH conectando para {default_user}@{ssh_ip}:{ssh_port} (PID: {process.pid})")
                         return process.pid
+                        
                     except Exception as e:
                         print(f"Erro ao executar SSH: {e}")
                         
@@ -280,7 +294,61 @@ class ProxmoxController:
                 viewer_args.append(inifile_path)
                 
                 print(f"Iniciando VM {vmid} via {protocol.upper()}...")
+                
                 process = subprocess.Popen(viewer_args)
+                
+                # Se background=True, minimiza a janela após abrir
+                if background and os.name == 'nt':
+                    import time
+                    import threading
+                    
+                    def minimize_window_aggressive(pid):
+                        """Minimiza a janela do processo repetidamente até conseguir"""
+                        import ctypes
+                        
+                        # Constantes do Windows
+                        SW_MINIMIZE = 6
+                        SW_SHOWMINNOACTIVE = 7
+                        HWND_BOTTOM = 1
+                        SWP_NOACTIVATE = 0x0010
+                        SWP_NOMOVE = 0x0002
+                        SWP_NOSIZE = 0x0001
+                        
+                        user32 = ctypes.windll.user32
+                        
+                        # Tenta múltiplas vezes com delays
+                        for attempt in range(10):  # 10 tentativas
+                            time.sleep(0.3)  # Aguarda 300ms entre tentativas
+                            
+                            try:
+                                # Enumera todas as janelas e procura pelo PID
+                                def enum_callback(hwnd, _):
+                                    if user32.IsWindowVisible(hwnd):
+                                        # Obtém o PID da janela
+                                        lpdw_process_id = ctypes.c_ulong()
+                                        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(lpdw_process_id))
+                                        
+                                        if lpdw_process_id.value == pid:
+                                            # Encontrou a janela, minimiza sem ativar
+                                            user32.ShowWindow(hwnd, SW_MINIMIZE)
+                                            # Move para o fundo da pilha
+                                            user32.SetWindowPos(hwnd, HWND_BOTTOM, 0, 0, 0, 0, 
+                                                              SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE)
+                                    return True
+                                
+                                # Tipo de callback para EnumWindows
+                                WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+                                enum_windows_proc = WNDENUMPROC(enum_callback)
+                                
+                                # Enumera todas as janelas
+                                user32.EnumWindows(enum_windows_proc, 0)
+                                
+                            except Exception as e:
+                                print(f"Tentativa {attempt + 1} falhou: {e}")
+                    
+                    # Inicia thread para minimizar em background
+                    threading.Thread(target=minimize_window_aggressive, args=(process.pid,), daemon=True).start()
+                
                 sleep(1)  # Aguarda 1 segundo para o processo iniciar
                 return process.pid
 

@@ -16,10 +16,7 @@ A native desktop application built with **Python** and **PyQt5** for quick monit
   Full compatibility across Linux distributions still needs to be verified and ensured.
 
 - [ ] **Asynchronous Action Indicators**  
-  Add visual feedback (like a spinner) to buttons when executing VM actions (*Start*, *Stop*, *Reboot*) to improve the user experience.
-  
-- [ ] **Tab for open VMs**
-Add a vertical tab (like in VMware Workstation) allowing you to bring the SSH, SPICE, openVNC, or RDP process to the foreground
+  Add visual feedback (like a spinner) to buttons when executing VM actions (*Start*, *Stop*, *Reboot*) to improve the user experience.  
 
 - [ ] **Get ticket for noVNC**
 Get the ticket for noVNC, allowing you to access the VM via noVNC without having to log in to the Proxmox webui first
@@ -27,6 +24,10 @@ Get the ticket for noVNC, allowing you to access the VM via noVNC without having
 ---
 
  🟢 COMPLETED
+- [x] **Tab for open VMs**
+Add a vertical tab (like in VMware Workstation) allowing you to bring the SSH, SPICE, openVNC, or RDP process to the foreground
+
+
 - [x] **VNC Support for Linux Machines**  
   Remote viewing functionality is currently focused on the Windows environment.  
   The logic for opening VNC connections needs to be adapted for Linux VMs.
