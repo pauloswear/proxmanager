@@ -186,6 +186,21 @@ class VMTreeWidget(QTreeWidget):
         self.dragging_item = None  # Track the item being dragged
         self.is_dragging = False   # Flag to prevent updates during drag
         
+        # Cache para otimizar atualizações
+        self.last_grouped_vms_hash = None
+        
+        # Debounce para refresh (evita múltiplos refreshes rápidos)
+        self.refresh_timer = QTimer()
+        self.refresh_timer.timeout.connect(self._do_delayed_refresh)
+        self.refresh_timer.setSingleShot(True)
+        self.pending_refresh = False
+        
+        # Debounce para salvamento de estado de expansão
+        self.save_expansion_timer = QTimer()
+        self.save_expansion_timer.timeout.connect(self._do_save_expansion_state)
+        self.save_expansion_timer.setSingleShot(True)
+        self.pending_save_expansion = False
+        
         # State for hover tracking
         self.mouse_over_widget = False
         self.hover_timer = QTimer()
@@ -267,10 +282,26 @@ class VMTreeWidget(QTreeWidget):
     
     def _on_item_expanded(self, item):
         """Callback quando um item é expandido"""
-        self._save_expansion_state()
+        self._schedule_save_expansion_state()
     
     def _on_item_collapsed(self, item):
         """Callback quando um item é colapsado"""
+        self._schedule_save_expansion_state()
+    
+    def _schedule_save_expansion_state(self):
+        """Agenda salvamento do estado de expansão com debounce"""
+        if self.pending_save_expansion:
+            self.save_expansion_timer.stop()
+        
+        self.pending_save_expansion = True
+        self.save_expansion_timer.start(500)  # 500ms de debounce para save
+    
+    def _do_save_expansion_state(self):
+        """Executa o salvamento do estado após debounce"""
+        if not self.pending_save_expansion:
+            return
+        
+        self.pending_save_expansion = False
         self._save_expansion_state()
     
     def setup_drag_drop(self):
@@ -329,6 +360,87 @@ class VMTreeWidget(QTreeWidget):
         self.setContextMenuPolicy(Qt.CustomContextMenu)
         self.customContextMenuRequested.connect(self.show_context_menu)
     
+    def refresh_tree_immediately(self):
+        """Forces an immediate tree refresh with current VM data (debounced)"""
+        # Se já tem um refresh pendente, apenas reinicia o timer
+        if self.pending_refresh:
+            self.refresh_timer.stop()
+        
+        self.pending_refresh = True
+        self.refresh_timer.start(150)  # 150ms de debounce
+    
+    def _do_delayed_refresh(self):
+        """Executa o refresh após o debounce"""
+        if not self.pending_refresh:
+            return
+            
+        self.pending_refresh = False
+        
+        # Busca dados cached da MainWindow
+        main_window = self.parent()
+        while main_window and not hasattr(main_window, 'unfiltered_vms_list'):
+            main_window = main_window.parent()
+        
+        if main_window and hasattr(main_window, 'unfiltered_vms_list') and main_window.unfiltered_vms_list:
+            print(f"🚀 Atualizando tree (debounced) com {len(main_window.unfiltered_vms_list)} VMs")
+            self.update_tree(main_window.unfiltered_vms_list)
+        else:
+            # Se não tem dados cached, emite sinal para forçar atualização
+            print("⚠️ Sem dados cached, forçando atualização via thread")
+            self.vm_action_performed.emit()
+    
+    def _update_existing_vms_only(self, vms_list: List[Dict[str, Any]]):
+        """Updates only the data of existing VM widgets without rebuilding the tree"""
+        print("⚡ Atualização otimizada: apenas widgets das VMs")
+        
+        try:
+            # Mapeia VMs por ID para acesso rápido
+            vms_by_id = {vm.get('vmid'): vm for vm in vms_list}
+            
+            # Percorre todos os grupos na tree
+            for group_idx in range(self.topLevelItemCount()):
+                group_item = self.topLevelItem(group_idx)
+                if group_item is None:
+                    continue
+                
+                # Percorre todas as VMs no grupo
+                for vm_idx in range(group_item.childCount()):
+                    vm_item = group_item.child(vm_idx)
+                    if vm_item is None:
+                        continue
+                        
+                    vm_widget = self.itemWidget(vm_item, 0)
+                    
+                    if vm_widget and hasattr(vm_widget, 'vmid'):
+                        try:
+                            # Testa se o widget ainda é válido
+                            vm_widget.isVisible()
+                            
+                            vmid = vm_widget.vmid
+                            if vmid in vms_by_id:
+                                # Atualiza dados da VM sem recriar widget
+                                new_vm_data = vms_by_id[vmid]
+                                vm_widget.update_data(new_vm_data)
+                        except RuntimeError:
+                            # Widget foi deletado, ignora
+                            continue
+        except RuntimeError:
+            # Se a tree foi modificada durante iteração, ignora
+            pass
+    
+    def _safe_clear_tree(self):
+        """Remove todos os itens da tree de forma segura para evitar erros Qt model"""
+        try:
+            # Simplesmente usa clear() mas suprime os warnings do Qt
+            import warnings
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                self.clear()
+        except Exception as e:
+            # Se der erro, ignora e continua
+            print(f"⚠️ Aviso: Erro ao limpar tree ({e}), continuando...")
+            pass
+    
     def update_tree(self, vms_list: List[Dict[str, Any]], expand_groups_with_results: bool = False):
         """Updates the tree with a new list of VMs
         
@@ -336,8 +448,8 @@ class VMTreeWidget(QTreeWidget):
             vms_list: List of VM data
             expand_groups_with_results: If True, expands groups that contain VMs (useful for filtering)
         """
-        # Don't update during drag & drop operations or when mouse is hovering
-        if self.is_dragging or self.mouse_over_widget:
+        # Don't update during active drag operations (but allow updates during hover)
+        if self.is_dragging:
             return
         
         # Save current expansion state (sem sobrescrever o persistido ainda)
@@ -357,11 +469,33 @@ class VMTreeWidget(QTreeWidget):
         self.blockSignals(True)
         self.setUpdatesEnabled(False)
         
-        # Clear current tree
-        self.clear()
+        # Clear current tree safely (evita erro Qt model)
+        self._safe_clear_tree()
         
         # Get VMs organized by groups
         grouped_vms = self.group_manager.get_vms_grouped_by_name(vms_list)
+        
+        # Gera hash dos grupos para verificar se houve mudança estrutural
+        import hashlib
+        import json
+        group_structure = {
+            group_name: [vm.get('vmid') for vm in vm_list] 
+            for group_name, vm_list in grouped_vms.items()
+        }
+        current_hash = hashlib.md5(json.dumps(group_structure, sort_keys=True).encode()).hexdigest()
+        
+        # Se estrutura de grupos não mudou, apenas atualiza VMs individuais
+        if (current_hash == self.last_grouped_vms_hash and 
+            not expand_groups_with_results and 
+            self.topLevelItemCount() > 0):
+            self.last_grouped_vms_hash = current_hash
+            # Reativa atualizações para permitir update dos widgets
+            self.blockSignals(False)
+            self.setUpdatesEnabled(True)
+            self._update_existing_vms_only(vms_list)
+            return
+        
+        self.last_grouped_vms_hash = current_hash
         
         # Sort groups alphabetically, keeping "Ungrouped" always at the end
         sorted_groups = self._sort_groups(grouped_vms)
@@ -725,7 +859,9 @@ class VMTreeWidget(QTreeWidget):
         
         self.group_manager.add_vm_to_group(vmid, group_name_for_manager)
         self.group_manager.save_groups()
-        self.vm_action_performed.emit()
+        
+        # Refresh with debounce
+        self.refresh_tree_immediately()
     
     def _get_group_from_item(self, item):
         """Get group name from a tree item (group or VM item)"""
@@ -813,8 +949,8 @@ class VMTreeWidget(QTreeWidget):
         self.group_manager.set_group_order(group_order)
         self.group_manager.save_groups()
         
-        # Emit signal to update interface
-        self.vm_action_performed.emit()
+        # Refresh interface with debounce
+        self.refresh_tree_immediately()
     
     def show_context_menu(self, position: QPoint):
         """Shows the context menu"""
@@ -881,8 +1017,8 @@ class VMTreeWidget(QTreeWidget):
             self.group_manager.groups[group_name] = []
             self.group_manager.save_groups()
             
-            # Update interface
-            self.vm_action_performed.emit()
+            # Update interface with debounce
+            self.refresh_tree_immediately()
     
     def rename_group(self, old_name: str):
         """Renames a group"""
@@ -904,8 +1040,8 @@ class VMTreeWidget(QTreeWidget):
                 del self.group_manager.groups[old_name]
                 self.group_manager.save_groups()
                 
-                # Update interface
-                self.vm_action_performed.emit()
+                # Update interface with debounce
+                self.refresh_tree_immediately()
     
     def delete_group(self, group_name: str):
         """Deletes a group"""
@@ -919,13 +1055,13 @@ class VMTreeWidget(QTreeWidget):
         
         if reply == QMessageBox.Yes:
             self.group_manager.delete_group(group_name)
-            self.vm_action_performed.emit()
+            self.refresh_tree_immediately()
     
     def remove_vm_from_group(self, vmid: int):
         """Removes a VM from its current group"""
         self.group_manager.add_vm_to_group(vmid, "")  # Move to ungrouped
         self.group_manager.save_groups()
-        self.vm_action_performed.emit()
+        self.refresh_tree_immediately()
 
     def enterEvent(self, event):
         """Called when mouse enters the widget area"""
@@ -946,10 +1082,28 @@ class VMTreeWidget(QTreeWidget):
     
     def update_all_vm_buttons(self):
         """Atualiza os botões de todas as VMs para refletir status dos processos"""
-        root = self.invisibleRootItem()
-        for i in range(root.childCount()):
-            group_item = root.child(i)
-            for j in range(group_item.childCount()):
-                vm_item = group_item.child(j)
-                if hasattr(vm_item, 'vm_widget'):
-                    vm_item.vm_widget.update_action_buttons()
+        try:
+            root = self.invisibleRootItem()
+            for i in range(root.childCount()):
+                group_item = root.child(i)
+                if group_item is None:  # Proteção contra item None
+                    continue
+                    
+                for j in range(group_item.childCount()):
+                    vm_item = group_item.child(j)
+                    if vm_item is None:  # Proteção contra item None
+                        continue
+                        
+                    # Verifica se o widget ainda existe e não foi deletado
+                    if (hasattr(vm_item, 'vm_widget') and 
+                        vm_item.vm_widget is not None):
+                        try:
+                            # Testa se o widget ainda é válido
+                            vm_item.vm_widget.isVisible()  # Método que falhará se widget foi deletado
+                            vm_item.vm_widget.update_action_buttons()
+                        except RuntimeError:
+                            # Widget foi deletado, ignora
+                            continue
+        except RuntimeError:
+            # Se a própria tree foi deletada/modificada durante a iteração, ignora
+            pass

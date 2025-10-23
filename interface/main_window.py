@@ -98,11 +98,16 @@ class MainWindow(QMainWindow):
     
     def cleanup_dead_processes(self):
         """Limpa processos mortos e atualiza botões"""
-        self.process_manager.cleanup_dead_processes()
-        # Força atualização dos botões de todas as VMs
-        self.tree_widget.update_all_vm_buttons()
-        # Atualiza contador de conexões ativas
-        self.update_active_connections_count()
+        try:
+            self.process_manager.cleanup_dead_processes()
+            # Força atualização dos botões de todas as VMs (se tree não estiver sendo reconstruída)
+            if hasattr(self.tree_widget, 'is_dragging') and not self.tree_widget.is_dragging:
+                self.tree_widget.update_all_vm_buttons()
+            # Atualiza contador de conexões ativas
+            self.update_active_connections_count()
+        except (RuntimeError, AttributeError):
+            # Se tree estiver sendo reconstruída, ignora esta atualização
+            pass
     
     def update_active_connections_count(self):
         """Atualiza o contador de conexões ativas no botão"""

@@ -221,47 +221,66 @@ class VMWidget(QWidget):
 
     def update_action_buttons(self):
         """ Atualiza a aparência e o estado dos botões de ação. """
-        is_running = self.status == 'running'
-        is_windows = self._is_windows_vm()
-        is_linux = self._is_linux_vm()
-        has_spice = self._has_spice_display()
-        
-        # Verifica se há processo ativo para esta VM
-        has_active_process = self.process_manager.has_active_process(self.vmid)
-        active_protocol = None
-        is_minimized = False
-        if has_active_process:
-            process_info = self.process_manager.get_process(self.vmid)
-            if process_info:
-                active_protocol = process_info.protocol
-                # Verifica se está minimizado
-                is_minimized = self.process_manager.is_window_minimized(self.vmid)
+        try:
+            # Verifica se o widget principal ainda existe e é válido
+            if not self or not hasattr(self, 'vmid'):
+                return
+            
+            # Testa se o widget não foi deletado
+            self.isVisible()  # Isso falhará se o widget foi deletado
+            
+            # Verifica se os widgets de botão ainda existem
+            if not hasattr(self, 'spice_main_btn') or self.spice_main_btn is None:
+                return
+                
+            is_running = self.status == 'running'
+            is_windows = self._is_windows_vm()
+            is_linux = self._is_linux_vm()
+            has_spice = self._has_spice_display()
+            
+            # Verifica se há processo ativo para esta VM
+            has_active_process = self.process_manager.has_active_process(self.vmid)
+            active_protocol = None
+            is_minimized = False
+            if has_active_process:
+                process_info = self.process_manager.get_process(self.vmid)
+                if process_info:
+                    active_protocol = process_info.protocol
+                    # Verifica se está minimizado
+                    is_minimized = self.process_manager.is_window_minimized(self.vmid)
+        except (RuntimeError, AttributeError):
+            # Widget foi deletado ou atributos não existem
+            return
         
         # Botão SPICE principal laranja (aparece quando VM tem SPICE configurado)
-        if is_running and has_spice:
-            # Usa (+) se minimizado, (-) se em primeiro plano, nada se não ativo
-            if active_protocol == 'spice':
-                text = "SPICE (+)" if is_minimized else "SPICE (-)"
+        try:
+            if is_running and has_spice:
+                # Usa (+) se minimizado, (-) se em primeiro plano, nada se não ativo
+                if active_protocol == 'spice':
+                    text = "SPICE (+)" if is_minimized else "SPICE (-)"
+                else:
+                    text = "SPICE"
+                self.spice_main_btn.setText(text)
+                color = "#FF6B35"  # Laranja para SPICE
+                hover_color = "#FF8555"
+                pressed_color = "#E55525"
+                self.spice_main_btn.setVisible(True)
+                
+                self.spice_main_btn.setStyleSheet(f"""
+                    QPushButton {{ 
+                        height: 30px; border-radius: 4px; font-size: 9pt; font-weight: bold; color: white; 
+                        background-color: {color}; border: 1px solid {color};
+                    }}
+                    QPushButton:hover {{ background-color: {hover_color}; border: 1px solid {hover_color}; }}
+                    QPushButton:pressed {{ background-color: {pressed_color}; border: 1px solid {pressed_color};
+                        padding-top: 3px; padding-left: 3px;
+                    }}
+                """)
             else:
-                text = "SPICE"
-            self.spice_main_btn.setText(text)
-            color = "#FF6B35"  # Laranja para SPICE
-            hover_color = "#FF8555"
-            pressed_color = "#E55525"
-            self.spice_main_btn.setVisible(True)
-            
-            self.spice_main_btn.setStyleSheet(f"""
-                QPushButton {{ 
-                    height: 30px; border-radius: 4px; font-size: 9pt; font-weight: bold; color: white; 
-                    background-color: {color}; border: 1px solid {color};
-                }}
-                QPushButton:hover {{ background-color: {hover_color}; border: 1px solid {hover_color}; }}
-                QPushButton:pressed {{ background-color: {pressed_color}; border: 1px solid {pressed_color};
-                    padding-top: 3px; padding-left: 3px;
-                }}
-            """)
-        else:
-            self.spice_main_btn.setVisible(False)
+                self.spice_main_btn.setVisible(False)
+        except (RuntimeError, AttributeError):
+            # Widget SPICE foi deletado, ignora
+            pass
         
         # Botão noVNC principal laranja (aparece quando VM está rodando MAS NÃO tem SPICE)
         if is_running and not has_spice:
