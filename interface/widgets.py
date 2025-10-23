@@ -261,9 +261,9 @@ class VMWidget(QWidget):
                 else:
                     text = "SPICE"
                 self.spice_main_btn.setText(text)
-                color = "#FF6B35"  # Laranja para SPICE
-                hover_color = "#FF8555"
-                pressed_color = "#E55525"
+                color = "#DE264D" 
+                hover_color = "#e5395b"
+                pressed_color = "#E55A9D"
                 self.spice_main_btn.setVisible(True)
                 
                 self.spice_main_btn.setStyleSheet(f"""
@@ -290,9 +290,9 @@ class VMWidget(QWidget):
             else:
                 text = "noVNC"
             self.novnc_main_btn.setText(text)
-            color = "#FF6B35"  # Laranja para noVNC
-            hover_color = "#FF8555"
-            pressed_color = "#E55525"
+            color = "#DE264D"  
+            hover_color = "#e5395b"
+            pressed_color = "#E55A9D"
             self.novnc_main_btn.setVisible(True)
             
             self.novnc_main_btn.setStyleSheet(f"""
