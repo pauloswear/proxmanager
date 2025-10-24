@@ -52,19 +52,18 @@ class MainWindow(QMainWindow):
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         
-        # Main horizontal layout: sidebar + content
+        # Main horizontal layout: expanded sidebar + viewport
         main_horizontal_layout = QHBoxLayout(central_widget)
         main_horizontal_layout.setContentsMargins(0, 0, 0, 0)
-        main_horizontal_layout.setSpacing(0)
+        main_horizontal_layout.setSpacing(2)
         
-        # Create sidebar
-        self.setup_sidebar()
-        main_horizontal_layout.addWidget(self.sidebar)
+        # Create expanded sidebar with all controls and information
+        self.setup_expanded_sidebar()
+        main_horizontal_layout.addWidget(self.expanded_sidebar)
         
-        # Create content area with vertical layout
-        content_widget = QWidget()
-        self.main_layout = QVBoxLayout(content_widget)
-        main_horizontal_layout.addWidget(content_widget)
+        # Create main viewport area (to be developed later)
+        self.setup_main_viewport()
+        main_horizontal_layout.addWidget(self.main_viewport)
 
         # Filter variables
         self.current_search_text = ""
@@ -76,13 +75,11 @@ class MainWindow(QMainWindow):
         self.search_expanded = False  # Start collapsed
         self.search_animation = None
 
-        self.setup_header()
-        self.setup_tabs()
-        self.setup_tree_view()
-        self.setup_footer() 
+        # All UI elements are now part of the expanded sidebar 
         
-        # Load geometry after all UI is setup (delayed to ensure proper rendering)
-        QTimer.singleShot(50, self.load_geometry)
+        # Configure window as fullscreen and non-resizable
+        self.setWindowState(Qt.WindowMaximized)
+        self.setFixedSize(QDesktopWidget().availableGeometry().size())
         
         # Don't call initial_load here - it will be called from LoginWindow
         
@@ -111,8 +108,8 @@ class MainWindow(QMainWindow):
     
     def update_active_connections_count(self):
         """Atualiza o contador de conexões ativas no botão"""
-        count = len(self.process_manager.processes)
-        self.active_connections_btn.setText(f"Active Connections ({count})")
+        # Atualiza todos os contadores dos botões
+        self.update_tab_counters()
         
         # Se está na visualização de conexões ativas, reaplica o filtro
         if self.current_view_mode == "active":
@@ -411,24 +408,43 @@ class MainWindow(QMainWindow):
                 (self.current_status_filter == "STOPPED" and vm_status != "RUNNING")
             )
             
-            # Apply active connections filter
+            # Apply view mode filter (active connections)
             vmid = vm.get('vmid')
             active_match = (
-                self.current_view_mode == "all" or
+                self.current_view_mode != "active" or
                 (self.current_view_mode == "active" and self.process_manager.has_active_process(vmid))
             )
             
-            if search_match and status_match and active_match:
+            # Apply OS filter
+            os_match = (
+                self.current_view_mode in ["all", "active"] or
+                (self.current_view_mode == "windows" and self._is_windows_vm(vm)) or
+                (self.current_view_mode == "linux" and self._is_linux_vm(vm))
+            )
+            
+            if search_match and status_match and active_match and os_match:
                 filtered_vms.append(vm)
         
         # Update results count
         total_count = len(self.unfiltered_vms_list)
         filtered_count = len(filtered_vms)
         
-        # Se está no modo "active", mostra quantas conexões ativas
+        # Atualiza contadores baseados no modo de visualização
         if self.current_view_mode == "active":
             active_count = len(self.process_manager.processes)
             self.results_label.setText(f"{filtered_count} active connections")
+        elif self.current_view_mode == "windows":
+            if filtered_count == total_count:
+                self.results_label.setText(f"{total_count} Windows VMs")
+            else:
+                windows_total = len([vm for vm in self.unfiltered_vms_list if self._is_windows_vm(vm)])
+                self.results_label.setText(f"{filtered_count} of {windows_total} Windows VMs")
+        elif self.current_view_mode == "linux":
+            if filtered_count == total_count:
+                self.results_label.setText(f"{total_count} Linux VMs")
+            else:
+                linux_total = len([vm for vm in self.unfiltered_vms_list if self._is_linux_vm(vm)])
+                self.results_label.setText(f"{filtered_count} of {linux_total} Linux VMs")
         elif filtered_count == total_count:
             self.results_label.setText(f"{total_count} servers")
         else:
@@ -522,6 +538,9 @@ class MainWindow(QMainWindow):
                 online_count += 1
             else:
                 offline_count += 1
+                
+        # Update tab button counters
+        self.update_tab_counters()
         
         # Update VM counts in footer with colors and status dot
         if hasattr(self, 'vm_counts'):
@@ -563,77 +582,81 @@ class MainWindow(QMainWindow):
         self.main_layout.addWidget(title_label)
     
     def setup_tabs(self):
-        """Cria abas para alternar entre todas VMs e apenas conexões ativas"""
+        """Cria abas para filtrar VMs por categorias"""
+        # Create scrollable area for tabs
+        tabs_scroll = QScrollArea()
+        tabs_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        tabs_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        tabs_scroll.setFixedHeight(50)
+        tabs_scroll.setWidgetResizable(True)
+        tabs_scroll.setStyleSheet("""
+            QScrollArea {
+                border: none;
+                background-color: transparent;
+            }
+            QScrollBar:horizontal {
+                height: 8px;
+                background-color: #2D2D2D;
+                border-radius: 4px;
+            }
+            QScrollBar::handle:horizontal {
+                background-color: #555555;
+                border-radius: 4px;
+                min-width: 20px;
+            }
+            QScrollBar::handle:horizontal:hover {
+                background-color: #666666;
+            }
+        """)
+        
         tabs_container = QWidget()
         tabs_layout = QHBoxLayout(tabs_container)
-        tabs_layout.setContentsMargins(5, 5, 5, 0)
-        tabs_layout.setSpacing(5)
+        tabs_layout.setContentsMargins(2, 5, 2, 0)
+        tabs_layout.setSpacing(3)
         
         # Botão "All VMs"
         self.all_vms_btn = QPushButton("All VMs")
         self.all_vms_btn.setCheckable(True)
         self.all_vms_btn.setChecked(True)
         self.all_vms_btn.clicked.connect(lambda: self.switch_view_mode("all"))
-        self.all_vms_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #00A3CC;
-                color: white;
-                border: none;
-                border-radius: 5px;
-                padding: 8px 20px;
-                font-size: 10pt;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #00BFFF;
-            }
-            QPushButton:checked {
-                background-color: #00A3CC;
-            }
-            QPushButton:!checked {
-                background-color: #383838;
-                color: #AAAAAA;
-            }
-        """)
+        self.all_vms_btn.setStyleSheet(self._get_tab_style("#00A3CC", "#00BFFF"))
+        
+        # Botão "Windows"
+        self.windows_btn = QPushButton("🪟 Win")
+        self.windows_btn.setCheckable(True)
+        self.windows_btn.clicked.connect(lambda: self.switch_view_mode("windows"))
+        self.windows_btn.setStyleSheet(self._get_tab_style("#0078D4", "#106EBE"))
+        
+        # Botão "Linux"
+        self.linux_btn = QPushButton("🐧 Linux")
+        self.linux_btn.setCheckable(True)
+        self.linux_btn.clicked.connect(lambda: self.switch_view_mode("linux"))
+        self.linux_btn.setStyleSheet(self._get_tab_style("#E95420", "#CC4813"))
         
         # Botão "Active Connections" com contador integrado
-        self.active_connections_btn = QPushButton("Active Connections (0)")
+        self.active_connections_btn = QPushButton("Active (0)")
         self.active_connections_btn.setCheckable(True)
         self.active_connections_btn.clicked.connect(lambda: self.switch_view_mode("active"))
-        self.active_connections_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #FF6B35;
-                color: white;
-                border: none;
-                border-radius: 5px;
-                padding: 8px 20px;
-                font-size: 10pt;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #FF8555;
-            }
-            QPushButton:checked {
-                background-color: #FF6B35;
-            }
-            QPushButton:!checked {
-                background-color: #383838;
-                color: #AAAAAA;
-            }
-        """)
+        self.active_connections_btn.setStyleSheet(self._get_tab_style("#FF6B35", "#FF8555"))
         
         tabs_layout.addWidget(self.all_vms_btn)
+        tabs_layout.addWidget(self.windows_btn)
+        tabs_layout.addWidget(self.linux_btn)
         tabs_layout.addWidget(self.active_connections_btn)
         tabs_layout.addStretch()
         
-        self.main_layout.addWidget(tabs_container)
+        # Set container in scroll area
+        tabs_scroll.setWidget(tabs_container)
+        self.main_layout.addWidget(tabs_scroll)
     
     def switch_view_mode(self, mode: str):
-        """Alterna entre visualização de todas VMs e apenas conexões ativas"""
+        """Alterna entre diferentes modos de visualização das VMs"""
         self.current_view_mode = mode
         
         # Atualiza estado dos botões
         self.all_vms_btn.setChecked(mode == "all")
+        self.windows_btn.setChecked(mode == "windows")
+        self.linux_btn.setChecked(mode == "linux")
         self.active_connections_btn.setChecked(mode == "active")
         
         # Aplica filtro
@@ -857,125 +880,293 @@ class MainWindow(QMainWindow):
     # --- Utility Methods
     # --------------------------------------------------------------------------
 
-    def load_geometry(self):
-        configs = self.config_manager.load_configs()
-        window_config = configs.get('window', {})
-        
-        # Set size from saved config or defaults
-        width = window_config.get('width', 1200)
-        height = window_config.get('height', 800)
-        
-        # Apply size and center the window
-        self.resize(width, height)
-        self.center()
-        
-        # Handle maximized state
-        if window_config.get('maximized', False):
-            self.showMaximized()
+
             
     def closeEvent(self, event):
-        # Save window configuration
+        # Save configurations (excluding window geometry since it's now fixed)
         try:
             configs = self.config_manager.load_configs()
-            
-            # Save only size and maximized state
-            configs['window'] = {
-                'width': self.size().width(),
-                'height': self.size().height(),
-                'maximized': self.isMaximized()
-            }
-            
+            # Window is now always fullscreen, no need to save geometry
             self.config_manager.save_configs(configs)
         except Exception as e:
             pass  # Silently ignore config save errors
         
         event.accept()
 
-    def center(self): 
-        qr = self.frameGeometry()
-        cp = QDesktopWidget().availableGeometry().center()
-        qr.moveCenter(cp)
-        self.move(qr.topLeft())
-
-    def setup_sidebar(self):
-        """Creates a compact sidebar with icon-only buttons"""
-        self.sidebar = QWidget()
-        self.sidebar.setFixedWidth(60)
-        self.sidebar.setStyleSheet("""
+    def setup_expanded_sidebar(self):
+        """Creates an expanded sidebar with all controls and information"""
+        self.expanded_sidebar = QWidget()
+        self.expanded_sidebar.setFixedWidth(350)  # Optimized width for better layout
+        self.expanded_sidebar.setStyleSheet("""
             QWidget {
-                background-color: #2D2D2D;
-                border-right: 1px solid #404040;
+                background-color: #1A1A1A;
+                border-right: 2px solid #404040;
             }
         """)
         
-        sidebar_layout = QVBoxLayout(self.sidebar)
-        sidebar_layout.setContentsMargins(5, 8, 5, 8)
-        sidebar_layout.setSpacing(6)
+        # Main layout for the expanded sidebar
+        self.main_layout = QVBoxLayout(self.expanded_sidebar)
+        self.main_layout.setContentsMargins(10, 10, 10, 10)
+        self.main_layout.setSpacing(5)
         
-        # Logo icon
-        logo_btn = QPushButton("🚀")
-        logo_btn.setStyleSheet(self._get_sidebar_icon_style(logo=True))
-        logo_btn.setEnabled(False)
-        logo_btn.setToolTip("ProxManager")
-        sidebar_layout.addWidget(logo_btn)
+        # Setup all the components that were previously in the main content area
+        self.setup_header()
+        self.setup_tabs()
+        self.setup_tree_view()
+        self.setup_footer()
+        self.setup_sidebar_controls()
         
-        # Separator
-        separator = QFrame()
-        separator.setFrameStyle(QFrame.HLine)
-        separator.setStyleSheet("color: #404040; margin: 5px 0;")
-        sidebar_layout.addWidget(separator)
+    def setup_sidebar_controls(self):
+        """Creates control buttons for the sidebar"""
+        # Control buttons section
+        controls_widget = QWidget()
+        controls_layout = QHBoxLayout(controls_widget)
+        controls_layout.setContentsMargins(0, 10, 0, 0)
+        controls_layout.setSpacing(10)
         
-        # Dashboard button (current page)
-        dashboard_btn = QPushButton("🏠")
-        dashboard_btn.setStyleSheet(self._get_sidebar_icon_style(active=True))
-        dashboard_btn.setEnabled(False)
-        dashboard_btn.setToolTip("Dashboard")
-        sidebar_layout.addWidget(dashboard_btn)
-        
-        # Search toggle button (starts inactive since menu is collapsed by default)
-        self.search_sidebar_btn = QPushButton("🔍")
-        self.search_sidebar_btn.setStyleSheet(self._get_sidebar_icon_style())
+        # Search toggle button
+        self.search_sidebar_btn = QPushButton("🔍 Search")
+        self.search_sidebar_btn.setStyleSheet(self._get_button_style())
         self.search_sidebar_btn.setToolTip("Toggle Search Menu")
         self.search_sidebar_btn.clicked.connect(self.toggle_search_menu)
-        sidebar_layout.addWidget(self.search_sidebar_btn)
+        controls_layout.addWidget(self.search_sidebar_btn)
         
         # Connect All SPICE button
-        self.connect_all_spice_btn = QPushButton("🖥️")
-        self.connect_all_spice_btn.setStyleSheet(self._get_sidebar_icon_style())
+        self.connect_all_spice_btn = QPushButton("🖥️ SPICE All")
+        self.connect_all_spice_btn.setStyleSheet(self._get_button_style())
         self.connect_all_spice_btn.setToolTip("Connect All SPICE VMs (Background)")
         self.connect_all_spice_btn.clicked.connect(self.connect_all_spice_vms)
-        sidebar_layout.addWidget(self.connect_all_spice_btn)
+        controls_layout.addWidget(self.connect_all_spice_btn)
         
-        # Add spacer
-        sidebar_layout.addStretch()
+        self.main_layout.addWidget(controls_widget)
+        
+        # Action buttons section
+        actions_widget = QWidget()
+        actions_layout = QHBoxLayout(actions_widget)
+        actions_layout.setContentsMargins(0, 5, 0, 0)
+        actions_layout.setSpacing(10)
         
         # Settings button
-        self.settings_btn = QPushButton("⚙️")
-        self.settings_btn.setStyleSheet(self._get_sidebar_icon_style())
+        self.settings_btn = QPushButton("⚙️ Settings")
+        self.settings_btn.setStyleSheet(self._get_button_style())
         self.settings_btn.clicked.connect(self.show_settings)
         self.settings_btn.setToolTip("Configurations")
-        sidebar_layout.addWidget(self.settings_btn)
+        actions_layout.addWidget(self.settings_btn)
         
         # Node Restart button
-        self.node_restart_btn = QPushButton("♻️")
-        self.node_restart_btn.setStyleSheet(self._get_sidebar_icon_style(warning=True))
+        self.node_restart_btn = QPushButton("♻️ Restart")
+        self.node_restart_btn.setStyleSheet(self._get_button_style(warning=True))
         self.node_restart_btn.clicked.connect(self.on_node_restart_clicked)
         self.node_restart_btn.setToolTip("Restart Node")
-        sidebar_layout.addWidget(self.node_restart_btn)
+        actions_layout.addWidget(self.node_restart_btn)
         
-        # Node Shutdown button
-        self.node_shutdown_btn = QPushButton("🛑")
-        self.node_shutdown_btn.setStyleSheet(self._get_sidebar_icon_style(danger=True))
+        # Node Shutdown button  
+        self.node_shutdown_btn = QPushButton("🛑 Shutdown")
+        self.node_shutdown_btn.setStyleSheet(self._get_button_style(danger=True))
         self.node_shutdown_btn.clicked.connect(self.on_node_shutdown_clicked)
         self.node_shutdown_btn.setToolTip("Shutdown Node")
-        sidebar_layout.addWidget(self.node_shutdown_btn)
+        actions_layout.addWidget(self.node_shutdown_btn)
         
         # Logout button
-        self.logout_btn = QPushButton("🚪")
-        self.logout_btn.setStyleSheet(self._get_sidebar_icon_style(logout=True))
+        self.logout_btn = QPushButton("🚪 Logout")
+        self.logout_btn.setStyleSheet(self._get_button_style(logout=True))
         self.logout_btn.clicked.connect(self.logout)
         self.logout_btn.setToolTip("Logout")
-        sidebar_layout.addWidget(self.logout_btn)
+        actions_layout.addWidget(self.logout_btn)
+        
+        self.main_layout.addWidget(actions_widget)
+        
+    def setup_main_viewport(self):
+        """Creates the main viewport area (to be developed later)"""
+        self.main_viewport = QWidget()
+        self.main_viewport.setStyleSheet("""
+            QWidget {
+                background-color: #2A2A2A;
+                border: 2px solid #FF4444;
+                border-radius: 8px;
+            }
+        """)
+        
+        # Placeholder layout for the viewport
+        viewport_layout = QVBoxLayout(self.main_viewport)
+        viewport_layout.setContentsMargins(20, 20, 20, 20)
+        
+        # Placeholder label
+        placeholder_label = QLabel("Main Viewport Area\n\nThis area will be developed later...")
+        placeholder_label.setAlignment(Qt.AlignCenter)
+        placeholder_label.setStyleSheet("""
+            QLabel {
+                color: #CCCCCC;
+                font-size: 18px;
+                font-weight: bold;
+                border: none;
+            }
+        """)
+        viewport_layout.addWidget(placeholder_label)
+        
+    def _get_button_style(self, warning=False, danger=False, logout=False):
+        """Returns button style for sidebar controls"""
+        base_style = """
+            QPushButton {
+                background-color: #3A3A3A;
+                color: white;
+                border: 1px solid #555555;
+                border-radius: 4px;
+                padding: 8px 12px;
+                font-size: 12px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #4A4A4A;
+                border-color: #666666;
+            }
+            QPushButton:pressed {
+                background-color: #2A2A2A;
+            }
+        """
+        
+        if warning:
+            base_style += """
+                QPushButton {
+                    background-color: #6B4423;
+                    border-color: #8B5A2B;
+                }
+                QPushButton:hover {
+                    background-color: #7B5433;
+                }
+            """
+        elif danger:
+            base_style += """
+                QPushButton {
+                    background-color: #5A2A2A;
+                    border-color: #7A3A3A;
+                }
+                QPushButton:hover {
+                    background-color: #6A3A3A;
+                }
+            """
+        elif logout:
+            base_style += """
+                QPushButton {
+                    background-color: #4A2A5A;
+                    border-color: #6A4A7A;
+                }
+                QPushButton:hover {
+                    background-color: #5A3A6A;
+                }
+            """
+            
+        return base_style
+        
+    def _get_tab_style(self, primary_color: str, hover_color: str) -> str:
+        """Returns stylesheet for tab buttons"""
+        return f"""
+            QPushButton {{
+                background-color: {primary_color};
+                color: white;
+                border: none;
+                border-radius: 4px;
+                padding: 6px 8px;
+                font-size: 9pt;
+                font-weight: bold;
+                min-width: 70px;
+                max-width: 85px;
+            }}
+            QPushButton:hover {{
+                background-color: {hover_color};
+            }}
+            QPushButton:checked {{
+                background-color: {primary_color};
+                border: 2px solid white;
+            }}
+            QPushButton:!checked {{
+                background-color: #383838;
+                color: #AAAAAA;
+            }}
+        """
+        
+    def _is_windows_vm(self, vm: Dict[str, Any]) -> bool:
+        """Detects if a VM is Windows based on various indicators"""
+        vm_name = vm.get('name', '').lower()
+        vm_tags = vm.get('tags', '').lower()  
+        vm_os = vm.get('ostype', '').lower()
+        vm_desc = vm.get('description', '').lower()
+        
+        # Common Windows indicators - more comprehensive
+        windows_indicators = [
+            'windows', 'win', 'w10', 'w11', 'win10', 'win11', 'win7', 'win8', 'win2019', 'win2022',
+            'server', 'srv', 'dc', 'ad', 'exchange', 'sql', 'iis', 'ws2019', 'ws2022', 'ws2016', 
+            'ws2012', 'winserver', 'microsoft', 'ms', '2019', '2022', '2016', '2012'
+        ]
+        
+        # Check ostype field first (Proxmox specific)
+        # Common Proxmox Windows OS types
+        windows_ostypes = ['win10', 'win11', 'win7', 'win8', 'w2k19', 'w2k16', 'w2k12', 'w2k8', 'wxp', 'w2k']
+        if any(win_type in vm_os for win_type in windows_ostypes + ['win', 'microsoft', 'ms']):
+            return True
+            
+        # Check name, tags, and description for Windows indicators
+        search_fields = [vm_name, vm_tags, vm_desc]
+        for field in search_fields:
+            for indicator in windows_indicators:
+                if indicator in field:
+                    return True
+                    
+        return False
+        
+    def _is_linux_vm(self, vm: Dict[str, Any]) -> bool:
+        """Detects if a VM is Linux based on various indicators"""
+        vm_name = vm.get('name', '').lower()
+        vm_tags = vm.get('tags', '').lower()
+        vm_os = vm.get('ostype', '').lower()
+        vm_desc = vm.get('description', '').lower()
+        
+        # Common Linux indicators
+        linux_indicators = [
+            'linux', 'ubuntu', 'debian', 'centos', 'rhel', 'fedora', 'suse',
+            'opensuse', 'mint', 'arch', 'manjaro', 'alpine', 'rocky', 'alma',
+            'oracle', 'redhat', 'kali', 'parrot', 'gentoo', 'slackware',
+            'tux', 'penguin', 'gnu', 'unix'
+        ]
+        
+        # Check ostype field (Proxmox specific)
+        linux_os_types = ['l24', 'l26', 'linux', 'ubuntu', 'debian', 'centos', 'rhel', 'fedora', 'arch']
+        if any(distro in vm_os for distro in linux_os_types):
+            return True
+            
+        # Check name, tags, and description for Linux indicators
+        search_fields = [vm_name, vm_tags, vm_desc]
+        for field in search_fields:
+            for indicator in linux_indicators:
+                if indicator in field:
+                    return True
+                    
+        # If not detected as Windows and has some OS info, likely Linux
+        if not self._is_windows_vm(vm) and (vm_os or any(term in vm_name for term in ['server', 'srv', 'host', 'node'])):
+            return True
+                
+        return False
+        
+    def update_tab_counters(self):
+        """Updates the counters in tab buttons based on current VM list"""
+        if not self.unfiltered_vms_list:
+            return
+            
+        # Count VMs by category
+        total_vms = len(self.unfiltered_vms_list)
+        windows_count = len([vm for vm in self.unfiltered_vms_list if self._is_windows_vm(vm)])
+        linux_count = len([vm for vm in self.unfiltered_vms_list if self._is_linux_vm(vm)])
+        active_count = len(self.process_manager.processes)
+        
+        # Update button texts with counters (using shorter text for better fit)
+        try:
+            self.all_vms_btn.setText(f"All ({total_vms})")
+            self.windows_btn.setText(f"🪟 Win ({windows_count})")
+            self.linux_btn.setText(f"🐧 Linux ({linux_count})")
+            self.active_connections_btn.setText(f"Active ({active_count})")
+        except RuntimeError:
+            # Handle case where widgets are being destroyed
+            pass
 
     def _get_sidebar_icon_style(self, active=False, logout=False, logo=False, warning=False, danger=False):
         """Returns the stylesheet for sidebar icon buttons"""

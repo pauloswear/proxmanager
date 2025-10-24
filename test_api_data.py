@@ -20,7 +20,7 @@ def test_api_data():
         host=configs.get('host', 'localhost'),
         user=configs.get('user', 'root@pam'),
         password=configs.get('password', ''),
-        node=configs.get('node', 'pve')
+        totp=configs.get('totp', '')
     )
 
     # Buscar VMs
