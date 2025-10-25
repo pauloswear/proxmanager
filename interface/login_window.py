@@ -107,6 +107,7 @@ class LoginWindow(QMainWindow):
     
     def __init__(self):
         super().__init__()
+        
         set_dark_title_bar(self.winId())
         self.config_manager = ConfigManager()
         self.login_data = self.config_manager.load_login_data()

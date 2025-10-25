@@ -90,7 +90,7 @@ class ProxmoxAPIClient:
             print(f"Erro ao obter lista de VMs/LXC: {e}")
             return []
 
-    def get_node_status(self) -> Dict[str, Any] | None:
+    def get_node_status(self) -> Dict[str, Any]:
         """
         Busca o status de performance do node (CPU, RAM, disco, uptime).
         Endpoint: /nodes/{self.node}/status
@@ -269,7 +269,7 @@ class ProxmoxAPIClient:
                 'os_info': {}
             }
 
-    def get_vm_config(self, vmid: Union[str, int], vm_type: str) -> Dict[str, Any] | None:
+    def get_vm_config(self, vmid: Union[str, int], vm_type: str) -> Dict[str, Any]:
         """
         Busca a configuração completa da VM/Container, incluindo ostype.
         Endpoint: /nodes/{node}/(lxc|qemu)/{vmid}/config
@@ -289,7 +289,7 @@ class ProxmoxAPIClient:
             print(f"Erro ao buscar configuração da {vm_type} {vmid}: {e}")
             return None
 
-    def get_vm_current_status(self, vmid: Union[str, int], vm_type: str) -> Dict[str, Any] | None:
+    def get_vm_current_status(self, vmid: Union[str, int], vm_type: str) -> Dict[str, Any]:
         """
         Busca o status atual ('status/current') da VM (QEMU) ou Container (LXC).
         Este endpoint contém as métricas de memória e CPU mais precisas.

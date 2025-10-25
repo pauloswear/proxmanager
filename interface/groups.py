@@ -121,7 +121,7 @@ class GroupManager:
         # Note: We keep empty groups to allow user-created empty groups
         # Groups are only removed when explicitly deleted by user
 
-    def get_group_for_vm(self, vmid: int) -> str | None:
+    def get_group_for_vm(self, vmid: int) -> str:
         """Returns the name of the group the VM belongs to, or None."""
         vmid = int(vmid)
         if vmid in self.ungrouped_vms:

@@ -6,6 +6,8 @@ import traceback
 from typing import Dict, Any
 from PyQt5.QtCore import QRunnable, QThreadPool, pyqtSignal, QObject
 from api import ProxmoxController # Assume que ProxmoxController está acessível
+from platform import platform
+
 
 # --- CONSTANTES ---
 CONFIG_FILE = "./resources/configs.json"
@@ -16,11 +18,13 @@ os.makedirs("./resources", exist_ok=True)  # Garante que o diretório exista
 # Para Windows 10/11 - modo escuro na barra de título
 def set_dark_title_bar(hwnd):
     # Ativa o modo escuro na barra de título
-    DWMWA_USE_IMMERSIVE_DARK_MODE = 20
-    set_window_attribute = ctypes.windll.dwmapi.DwmSetWindowAttribute
-    set_window_attribute(int(hwnd), DWMWA_USE_IMMERSIVE_DARK_MODE, 
-                        ctypes.byref(ctypes.c_int(1)), 
-                        ctypes.sizeof(ctypes.c_int))
+    if platform() == "win32":
+        DWMWA_USE_IMMERSIVE_DARK_MODE = 20
+
+        set_window_attribute = ctypes.windll.dwmapi.DwmSetWindowAttribute
+        set_window_attribute(int(hwnd), DWMWA_USE_IMMERSIVE_DARK_MODE, 
+                            ctypes.byref(ctypes.c_int(1)), 
+                            ctypes.sizeof(ctypes.c_int))
 
 
 
@@ -43,7 +47,7 @@ def load_config() -> Dict[str, Any]:
         "totp": None
     }
 
-def save_config(host: str, user: str, password: str, totp: str | None):
+def save_config(host: str, user: str, password: str, totp: str):
     """ Salva as credenciais de login no arquivo JSON. """
     config = {
         "host_ip": host,

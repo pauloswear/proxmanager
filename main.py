@@ -53,13 +53,14 @@ def is_process_running(pid):
     """Verifica se um processo está rodando pelo PID"""
     try:
         if os.name == 'nt':  # Windows
-            import subprocess
             result = subprocess.run(['tasklist', '/FI', f'PID eq {pid}'], 
                                   capture_output=True, text=True)
             return str(pid) in result.stdout
+        
         else:  # Unix/Linux
             os.kill(pid, 0)
             return True
+    
     except (OSError, subprocess.SubprocessError):
         return False
 
