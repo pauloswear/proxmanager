@@ -3,6 +3,8 @@ import os
 import atexit
 import tempfile
 import subprocess
+import socket
+import threading
 from PyQt5.QtWidgets import QApplication, QMessageBox
 from PyQt5.QtGui import QIcon, QColor, QPalette
 from PyQt5.QtCore import QSettings, Qt
@@ -12,66 +14,40 @@ from interface import LoginWindow
 APP_ORGANIZATION = "PyQtProxmoxApp"
 APP_NAME = "ProxManager"
 ICON_PATH = "./resources/favicon.ico"
-LOCKFILE_PATH = os.path.join(tempfile.gettempdir(), "proxmanager.lock")
+SOCKET_PORT = 49152  # Porta para verificar instância única
 
-def force_remove_lockfile():
-    """Remove forçadamente o lockfile ao iniciar para evitar lockfiles órfãos"""
-    try:
-        if os.path.exists(LOCKFILE_PATH):
-            os.remove(LOCKFILE_PATH)
-            print(f"Lockfile órfão removido: {LOCKFILE_PATH}")
-    except Exception as e:
-        print(f"Erro ao remover lockfile órfão: {e}")
+# Variável global para manter referência do socket
+app_socket = None
 
-def create_lockfile():
-    """Cria o arquivo de lock com o PID do processo atual"""
+def create_socket_lock():
+    """Cria um socket para verificar se a aplicação já está rodando"""
+    global app_socket
     try:
-        if os.path.exists(LOCKFILE_PATH):
-            # Verifica se o processo ainda está rodando
-            with open(LOCKFILE_PATH, 'r') as f:
-                old_pid = int(f.read().strip())
-            
-            # Verifica se o processo ainda existe
-            if is_process_running(old_pid):
-                return False  # Processo ainda rodando
-            else:
-                # Remove lockfile órfão
-                os.remove(LOCKFILE_PATH)
+        # Tenta criar e fazer bind em uma porta específica
+        app_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        app_socket.bind(('localhost', SOCKET_PORT))
+        app_socket.listen(1)
         
-        # Cria novo lockfile
-        with open(LOCKFILE_PATH, 'w') as f:
-            f.write(str(os.getpid()))
-        
-        # Registra função para remover lockfile ao sair
-        atexit.register(remove_lockfile)
+        # Registra função para fechar socket ao sair
+        atexit.register(close_socket_lock)
         return True
         
+    except socket.error:
+        # Porta já está em uso, aplicação já está rodando
+        return False
     except Exception as e:
-        print(f"Erro ao criar lockfile: {e}")
+        print(f"Erro ao criar socket lock: {e}")
         return False
 
-def remove_lockfile():
-    """Remove o arquivo de lock"""
+def close_socket_lock():
+    """Fecha o socket lock"""
+    global app_socket
     try:
-        if os.path.exists(LOCKFILE_PATH):
-            os.remove(LOCKFILE_PATH)
+        if app_socket:
+            app_socket.close()
+            app_socket = None
     except Exception as e:
-        print(f"Erro ao remover lockfile: {e}")
-
-def is_process_running(pid):
-    """Verifica se um processo está rodando pelo PID"""
-    try:
-        if os.name == 'nt':  # Windows
-            result = subprocess.run(['tasklist', '/FI', f'PID eq {pid}'], 
-                                  capture_output=True, text=True)
-            return str(pid) in result.stdout
-        
-        else:  # Unix/Linux
-            os.kill(pid, 0)
-            return True
-    
-    except (OSError, subprocess.SubprocessError):
-        return False
+        print(f"Erro ao fechar socket lock: {e}")
 
 def show_already_running_message():
     """Exibe mensagem informando que a aplicação já está rodando"""
@@ -106,11 +82,8 @@ def apply_dark_theme(app: QApplication):
 def main():
     """ Ponto de entrada principal da aplicação. """
     
-    # Remove forçadamente qualquer lockfile órfão ao iniciar
-    force_remove_lockfile()
-    
-    # Verificar se já há uma instância rodando
-    if not create_lockfile():
+    # Verificar se já há uma instância rodando usando socket
+    if not create_socket_lock():
         show_already_running_message()
         return
     
