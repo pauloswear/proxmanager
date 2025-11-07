@@ -6,7 +6,7 @@ import traceback
 from typing import Dict, Any
 from PyQt5.QtCore import QRunnable, QThreadPool, pyqtSignal, QObject
 from api import ProxmoxController # Assume que ProxmoxController está acessível
-from platform import platform
+from sys import platform
 
 
 # --- CONSTANTES ---
@@ -18,7 +18,7 @@ os.makedirs("./resources", exist_ok=True)  # Garante que o diretório exista
 # Para Windows 10/11 - modo escuro na barra de título
 def set_dark_title_bar(hwnd):
     # Ativa o modo escuro na barra de título
-    if platform() == "win32":
+    if platform == "win32":
         DWMWA_USE_IMMERSIVE_DARK_MODE = 20
 
         set_window_attribute = ctypes.windll.dwmapi.DwmSetWindowAttribute

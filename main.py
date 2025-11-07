@@ -14,6 +14,15 @@ APP_NAME = "ProxManager"
 ICON_PATH = "./resources/favicon.ico"
 LOCKFILE_PATH = os.path.join(tempfile.gettempdir(), "proxmanager.lock")
 
+def force_remove_lockfile():
+    """Remove forçadamente o lockfile ao iniciar para evitar lockfiles órfãos"""
+    try:
+        if os.path.exists(LOCKFILE_PATH):
+            os.remove(LOCKFILE_PATH)
+            print(f"Lockfile órfão removido: {LOCKFILE_PATH}")
+    except Exception as e:
+        print(f"Erro ao remover lockfile órfão: {e}")
+
 def create_lockfile():
     """Cria o arquivo de lock com o PID do processo atual"""
     try:
@@ -96,6 +105,9 @@ def apply_dark_theme(app: QApplication):
 
 def main():
     """ Ponto de entrada principal da aplicação. """
+    
+    # Remove forçadamente qualquer lockfile órfão ao iniciar
+    force_remove_lockfile()
     
     # Verificar se já há uma instância rodando
     if not create_lockfile():
