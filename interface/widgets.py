@@ -199,12 +199,33 @@ class VMWidget(QWidget):
         
         if ip_addresses:
             # Filtra apenas IPv4 para uma exibição mais limpa
-            ipv4_addresses = [ip for ip in ip_addresses if '.' in ip and not ip.startswith('127.')]
-            # IPv4 filtering applied
+            ipv4_addresses = [ip for ip in ip_addresses if '.' in ip]
             
             if ipv4_addresses:
-                # Exibe apenas o primeiro IP IPv4 válido
-                ip_text = f"IP: {ipv4_addresses[0]}"
+                # Prioriza IPs na ordem: 100.x → 192.x → 127.x → 10.x → outros
+                priority_100 = []
+                priority_192 = []
+                priority_127 = []
+                priority_10 = []
+                other_ips = []
+                
+                for ip in ipv4_addresses:
+                    if ip.startswith('100.'):
+                        priority_100.append(ip)
+                    elif ip.startswith('192.'):
+                        priority_192.append(ip)
+                    elif ip.startswith('127.'):
+                        priority_127.append(ip)
+                    elif ip.startswith('10.'):
+                        priority_10.append(ip)
+                    else:
+                        other_ips.append(ip)
+                
+                # Concatena IPs na ordem de prioridade
+                preferred_ips = priority_100 + priority_192 + priority_127 + priority_10 + other_ips
+                
+                # Exibe o IP de maior prioridade
+                ip_text = f"IP: {preferred_ips[0]}"
                 if len(ipv4_addresses) > 1:
                     ip_text += f" (+{len(ipv4_addresses)-1})"
             elif ip_addresses:

@@ -126,17 +126,38 @@ class ProxmoxAPIClient:
             try:
                 agent_info = self.proxmox.nodes(self.node).qemu(str(vmid)).agent('network-get-interfaces').get()
                 if 'result' in agent_info:
+                    all_ips = []
                     for interface in agent_info['result']:
                         if 'ip-addresses' in interface:
                             for ip_info in interface['ip-addresses']:
                                 ip_addr = ip_info.get('ip-address', '')
                                 ip_type = ip_info.get('ip-address-type', '')
-                                # Pega o primeiro IP IPv4 válido (não loopback)
-                                if ip_addr and ip_type == 'ipv4' and not ip_addr.startswith('127.'):
-                                    vm_ip = ip_addr
-                                    break
-                        if vm_ip:
-                            break
+                                # Coleta todos os IPs IPv4 válidos
+                                if ip_addr and ip_type == 'ipv4':
+                                    all_ips.append(ip_addr)
+                    
+                    # Prioriza IPs na ordem: 100.x → 192.x → 127.x → 10.x → outros
+                    if all_ips:
+                        priority_100 = []
+                        priority_192 = []
+                        priority_127 = []
+                        priority_10 = []
+                        other_ips = []
+                        
+                        for ip in all_ips:
+                            if ip.startswith('100.'):
+                                priority_100.append(ip)
+                            elif ip.startswith('192.'):
+                                priority_192.append(ip)
+                            elif ip.startswith('127.'):
+                                priority_127.append(ip)
+                            elif ip.startswith('10.'):
+                                priority_10.append(ip)
+                            else:
+                                other_ips.append(ip)
+                        
+                        preferred_ips = priority_100 + priority_192 + priority_127 + priority_10 + other_ips
+                        vm_ip = preferred_ips[0] if preferred_ips else None
             except Exception:
                 pass
             
@@ -204,17 +225,38 @@ class ProxmoxAPIClient:
             try:
                 agent_info = self.proxmox.nodes(self.node).qemu(str(vmid)).agent('network-get-interfaces').get()
                 if 'result' in agent_info:
+                    all_ips = []
                     for interface in agent_info['result']:
                         if 'ip-addresses' in interface:
                             for ip_info in interface['ip-addresses']:
                                 ip_addr = ip_info.get('ip-address', '')
                                 ip_type = ip_info.get('ip-address-type', '')
-                                # Pega o primeiro IP IPv4 válido (não loopback)
-                                if ip_addr and ip_type == 'ipv4' and not ip_addr.startswith('127.'):
-                                    vm_ip = ip_addr
-                                    break
-                        if vm_ip:
-                            break
+                                # Coleta todos os IPs IPv4 válidos
+                                if ip_addr and ip_type == 'ipv4':
+                                    all_ips.append(ip_addr)
+                    
+                    # Prioriza IPs na ordem: 100.x → 192.x → 127.x → 10.x → outros
+                    if all_ips:
+                        priority_100 = []
+                        priority_192 = []
+                        priority_127 = []
+                        priority_10 = []
+                        other_ips = []
+                        
+                        for ip in all_ips:
+                            if ip.startswith('100.'):
+                                priority_100.append(ip)
+                            elif ip.startswith('192.'):
+                                priority_192.append(ip)
+                            elif ip.startswith('127.'):
+                                priority_127.append(ip)
+                            elif ip.startswith('10.'):
+                                priority_10.append(ip)
+                            else:
+                                other_ips.append(ip)
+                        
+                        preferred_ips = priority_100 + priority_192 + priority_127 + priority_10 + other_ips
+                        vm_ip = preferred_ips[0] if preferred_ips else None
                 
                 # Tenta detectar o OS via guest-agent
                 try:
