@@ -135,20 +135,20 @@ class ProxmoxAPIClient:
                                 # Coleta todos os IPs IPv4 válidos
                                 if ip_addr and ip_type == 'ipv4':
                                     all_ips.append(ip_addr)
-                    
-                    # Prioriza IPs na ordem: 100.x → 192.x → 127.x → 10.x → outros
+
+                    # Prioriza IPs na ordem: 192.x → 100.x → 127.x → 10.x → outros
                     if all_ips:
-                        priority_100 = []
                         priority_192 = []
+                        priority_100 = []
                         priority_127 = []
                         priority_10 = []
                         other_ips = []
                         
                         for ip in all_ips:
-                            if ip.startswith('100.'):
-                                priority_100.append(ip)
-                            elif ip.startswith('192.'):
+                            if ip.startswith('192.'):
                                 priority_192.append(ip)
+                            elif ip.startswith('100.'):
+                                priority_100.append(ip)
                             elif ip.startswith('127.'):
                                 priority_127.append(ip)
                             elif ip.startswith('10.'):
