@@ -210,10 +210,10 @@ class VMWidget(QWidget):
                 other_ips = []
                 
                 for ip in ipv4_addresses:
-                    if ip.startswith('100.'):
-                        priority_100.append(ip)
-                    elif ip.startswith('192.'):
+                    if ip.startswith('192.'):
                         priority_192.append(ip)
+                    elif ip.startswith('100.'):
+                        priority_100.append(ip)
                     elif ip.startswith('127.'):
                         priority_127.append(ip)
                     elif ip.startswith('10.'):
@@ -222,7 +222,7 @@ class VMWidget(QWidget):
                         other_ips.append(ip)
                 
                 # Concatena IPs na ordem de prioridade
-                preferred_ips = priority_100 + priority_192 + priority_127 + priority_10 + other_ips
+                preferred_ips = priority_192 + priority_100 + priority_127 + priority_10 + other_ips
                 
                 # Exibe o IP de maior prioridade
                 ip_text = f"IP: {preferred_ips[0]}"
