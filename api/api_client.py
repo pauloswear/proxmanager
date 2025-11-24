@@ -156,7 +156,7 @@ class ProxmoxAPIClient:
                             else:
                                 other_ips.append(ip)
                         
-                        preferred_ips = priority_100 + priority_192 + priority_127 + priority_10 + other_ips
+                        preferred_ips = priority_192 + priority_100 + priority_127 + priority_10 + other_ips
                         vm_ip = preferred_ips[0] if preferred_ips else None
             except Exception:
                 pass
